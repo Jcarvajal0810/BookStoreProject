@@ -1,0 +1,112 @@
+﻿version: '3.8'
+
+services:
+  user-service:
+    build: ./user-service
+    container_name: bs2_user
+    ports:
+      - "6000:6000"
+    environment:
+      - PORT=6000
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0
+      - JWT_SECRET=WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54=
+    restart: unless-stopped
+
+  user-scheduler:
+    build: ./user-scheduler
+    container_name: bs2_user_scheduler
+    environment:
+      - USER_SERVICE_URL=http://user-service:6000
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0
+    depends_on:
+      - user-service
+    restart: unless-stopped
+
+  catalog:
+    build: ./catalog
+    container_name: bs2_catalog
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0
+    restart: unless-stopped
+
+  order:
+    build: ./order
+    container_name: bs2_order
+    ports:
+      - "4000:4000"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0
+    restart: unless-stopped
+
+  cart:
+    build: ./cart-service
+    container_name: bs2_cart
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/cartdb?retryWrites=true&w=majority&appName=SharedM0
+      - PORT=5000
+    restart: unless-stopped
+
+  inventory:
+    build: ./inventary-service
+    container_name: bs2_inventory
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/inventorydb?retryWrites=true&w=majority&appName=SharedM0
+      - PORT=8000
+    restart: unless-stopped
+
+  payment:
+    build: ./payment-service
+    container_name: payment-service-payu
+    ports:
+      - "7000:7000"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/paymentdb?retryWrites=true&w=majority&appName=SharedM0
+      - PORT=7000
+      - PAYU_ACCOUNT_ID=512321
+      - PAYU_MERCHANT_ID=508029
+      - PAYU_API_LOGIN=pRRXKOl8ikMmt9u
+      - PAYU_API_KEY=4Vj8eK4rloUd272L48hsrarnUA
+      - PAYU_PUBLIC_KEY=PKaC6H4cEDJD919n705L544kSU
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: bs2_gateway
+    ports:
+      - "4500:4500"
+    environment:
+      - PORT=4500
+      - CATALOG_SERVICE_URL=http://catalog:3000
+      - CART_SERVICE_URL=http://cart:5000
+      - ORDER_SERVICE_URL=http://order:4000
+      - PAYMENT_SERVICE_URL=http://payment:7000
+      - INVENTORY_SERVICE_URL=http://inventory:8000
+      - USER_SERVICE_URL=http://user-service:6000
+    depends_on:
+      - user-service
+      - catalog
+      - cart
+      - order
+      - payment
+      - inventory
+    restart: unless-stopped
+
+  frontend:
+    build: ./Front-end-BookStore
+    container_name: bs2_frontend
+    ports:
+      - "3500:3500"
+    environment:
+      - VITE_API_GATEWAY=http://localhost:4500
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
+
+volumes:
+  mongo_data:
