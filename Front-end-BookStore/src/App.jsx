@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, X } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, X, Package } from 'lucide-react';
 
 export default function App() {
   const [books, setBooks] = useState([]);
@@ -173,6 +173,42 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error clearing cart:', err);
+    }
+  };
+
+  const processOrder = async () => {
+    if (cart.length === 0) {
+      alert('El carrito está vacío');
+      return;
+    }
+
+    if (!confirm('¿Confirmar pedido?')) return;
+
+    try {
+      // Crear órdenes para cada item del carrito
+      const orderPromises = cart.map(item => 
+        fetch(`${API_URL}/order/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: userId,
+            book_id: item.book_id,
+            quantity: item.quantity,
+            price: item.price
+          })
+        })
+      );
+
+      await Promise.all(orderPromises);
+      
+      // Vaciar carrito después de crear órdenes
+      await clearCart();
+      
+      alert('✅ Pedido realizado con éxito! Estado: CREATED');
+      setShowCart(false);
+    } catch (err) {
+      alert('Error al procesar el pedido');
+      console.error(err);
     }
   };
 
@@ -382,9 +418,11 @@ export default function App() {
                     </button>
                     
                     <button
-                      className="w-full py-3 text-white transition-colors bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                      onClick={processOrder}
+                      className="flex items-center justify-center w-full gap-2 py-3 text-white transition-colors bg-green-600 rounded-lg hover:bg-green-700"
                     >
-                      Proceder al Pago
+                      <Package size={20} />
+                      Confirmar Pedido
                     </button>
                   </div>
                 </>
