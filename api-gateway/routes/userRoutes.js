@@ -2,34 +2,47 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-const USER_URL = process.env.USER_SERVICE_URL || 'http://localhost:6000';
+// Dentro de Docker, usa el nombre del contenedor (no localhost)
+const USER_URL = process.env.USER_SERVICE_URL || 'http://user-service:6000';
 
 router.all('*', async (req, res) => {
-  let url; // Declarada arriba para usar en el catch
+  let targetUrl; // Variable visible también en el catch
 
   try {
-    // El frontend llama /users/api/auth/register o /users/api/auth/test
-    // Y se envía a Spring Boot como /api/auth/register (sin duplicar /api)
-    const cleanPath = req.path.replace(/^\/api/, ''); // elimina /api inicial si existe
-    url = `${USER_URL}/api${cleanPath}`;
+    // Limpia posibles duplicaciones de /api
+    const cleanPath = req.path.replace(/^\/api/, '');
+    targetUrl = `${USER_URL}/api${cleanPath}`;
 
-    console.log(`  User: ${req.method} ${req.originalUrl} -> ${url}`);
+    console.log(`🔁 [UserRoute] ${req.method} -> ${targetUrl}`);
 
     const response = await axios({
       method: req.method,
-      url: url,
+      url: targetUrl,
       data: req.body,
       headers: {
-        'Content-Type': 'application/json',
+        ...req.headers,
+        host: undefined, // evita conflictos con cabecera Host
       },
+      validateStatus: () => true, // permite manejar todos los códigos manualmente
     });
 
-    res.json(response.data);
+    if (response.status >= 400) {
+      console.error(`⚠️ Error del microservicio User (${response.status}):`, response.data);
+      return res.status(response.status).json(response.data);
+    }
+
+    res.status(response.status).json(response.data);
+
   } catch (error) {
-    const status = error.response?.status || 500;
-    const data = error.response?.data || { error: 'Error en user service' };
-    console.error(' User error:', status, url, data);
-    res.status(status).json(data);
+    console.error('💥 Error al conectar con el servicio de usuarios:', error.message);
+    if (error.response) {
+      console.error('Respuesta del microservicio:', error.response.data);
+      return res
+        .status(error.response.status || 500)
+        .json(error.response.data || { error: 'Error en user service' });
+    }
+
+    res.status(500).json({ error: 'No se pudo conectar con el servicio de usuarios' });
   }
 });
 

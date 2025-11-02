@@ -48,8 +48,8 @@ export default function App() {
     const t = localStorage.getItem('token');
     if (!t) return;
     try {
-      const res = await fetch(`${API_URL}/users/api/users/profile`, {
-        headers: { Authorization: `Bearer ${t}` },
+     const res = await fetch(`${API_URL}/users/api/users/profile/${u.username}`, {
+      headers: { Authorization: `Bearer ${t}` },
       });
       if (!res.ok) {
         localStorage.removeItem('token');
