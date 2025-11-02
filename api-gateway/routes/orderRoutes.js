@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-const ORDER_URL = process.env.ORDER_SERVICE_URL || 'http://localhost:4000';
+const ORDER_URL = process.env.ORDER_SERVICE_URL || 'http://order:4000';
+
 
 router.all('*', async (req, res) => {
   try {

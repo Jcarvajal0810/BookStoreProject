@@ -5,7 +5,8 @@ const router = express.Router();
 //  IMPORTANTE: dentro de Docker, "localhost" no apunta al host,
 // sino al propio contenedor del Gateway.
 // Por eso usamos el nombre del contenedor del servicio de inventario.
-const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'http://bs2_inventory:8000';
+const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'http://inventory:8000';
+
 
 //  Middleware que redirige todas las peticiones hacia el microservicio de inventario
 router.all('*', async (req, res) => {

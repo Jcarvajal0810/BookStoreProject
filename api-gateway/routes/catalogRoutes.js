@@ -3,7 +3,8 @@ const axios = require('axios');
 const router = express.Router();
 
 // Lee desde variable de entorno o usa localhost por defecto
-const CATALOG_URL = process.env.CATALOG_SERVICE_URL || "http://localhost:3000";
+const CATALOG_URL = process.env.CATALOG_SERVICE_URL || 'http://catalog:3000';
+
 
 // Obtener todos los libros
 router.get('/', async (req, res) => {

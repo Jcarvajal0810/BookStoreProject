@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-const PAYMENT_URL = process.env.PAYMENT_SERVICE_URL || 'http://localhost:7000';
+const PAYMENT_URL = process.env.PAYMENT_SERVICE_URL || 'http://payment:7000';
+
 
 router.all('*', async (req, res) => {
   try {

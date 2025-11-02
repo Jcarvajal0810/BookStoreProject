@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-const CART_URL = process.env.CART_SERVICE_URL || 'http://localhost:5000';
+const CART_URL = process.env.CART_SERVICE_URL || 'http://cart:5000';
+
 
 // Proxy manual para todas las rutas del carrito
 router.all('*', async (req, res) => {

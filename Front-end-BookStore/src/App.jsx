@@ -45,29 +45,41 @@ export default function App() {
 
   // Comprueba token y obtiene profile si existe
   const checkSession = async () => {
-    const t = localStorage.getItem('token');
-    if (!t) return;
-    try {
-     const res = await fetch(`${API_URL}/users/api/users/profile/${u.username}`, {
+  const t = localStorage.getItem('token');
+  if (!t) return;
+
+  try {
+    // Recuperamos el usuario del localStorage
+    const storedUser = JSON.parse(localStorage.getItem('user'));
+    const username = storedUser?.username;
+
+    // Si no hay user en localStorage, no seguimos
+    if (!username) return;
+
+    const res = await fetch(`${API_URL}/users/api/users/profile/${username}`, {
       headers: { Authorization: `Bearer ${t}` },
-      });
-      if (!res.ok) {
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
-        return;
-      }
-      const profile = await res.json();
-      setToken(t);
-      setUser(profile);
-      setUserId(profile.id || profile._id || profile.userId || 'user-123');
-    } catch (err) {
-      console.error('checkSession error:', err);
+    });
+
+    if (!res.ok) {
+      // Token inválido o sesión expirada
       localStorage.removeItem('token');
       setToken(null);
       setUser(null);
+      return;
     }
-  };
+
+    const profile = await res.json();
+    setToken(t);
+    setUser(profile);
+    setUserId(profile.id || profile._id || profile.userId || 'user-123');
+  } catch (err) {
+    console.error('checkSession error:', err);
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  }
+};
+
 
   // Login -> guarda token y user
   const handleLogin = async () => {
