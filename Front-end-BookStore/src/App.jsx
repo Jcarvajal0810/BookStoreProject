@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, X, Package, CreditCard } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, X, Package, CreditCard, User } from 'lucide-react';
 
 export default function App() {
   const [books, setBooks] = useState([]);
@@ -20,17 +20,144 @@ export default function App() {
     cvv: '',
   });
 
-  const [userId] = useState('user-123');
+  // -----------------------
+  // USER SERVICE INTEGRATION
+  // -----------------------
+  // Ahora userId es actualizable cuando el usuario haga login
+  const [userId, setUserId] = useState('user-123');
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  // authForm usa 'username' y 'password' para coincidir con tu AuthController
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
 
   // API gateway base (gateway should proxy /payment -> /api/payments)
   const API_URL = 'http://localhost:4500';
 
   useEffect(() => {
+    checkSession();
     fetchBooks();
     fetchCart();
     fetchInventory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Comprueba token y obtiene profile si existe
+  const checkSession = async () => {
+    const t = localStorage.getItem('token');
+    if (!t) return;
+    try {
+      const res = await fetch(`${API_URL}/users/api/users/profile`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (!res.ok) {
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
+        return;
+      }
+      const profile = await res.json();
+      setToken(t);
+      setUser(profile);
+      setUserId(profile.id || profile._id || profile.userId || 'user-123');
+    } catch (err) {
+      console.error('checkSession error:', err);
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
+    }
+  };
+
+  // Login -> guarda token y user
+  const handleLogin = async () => {
+    try {
+      const res = await fetch(`${API_URL}/users/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: authForm.username,
+          password: authForm.password,
+        }),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.error('Login failed:', res.status, txt);
+        alert('Credenciales incorrectas o error en login');
+        return;
+      }
+
+      const data = await res.json();
+      // Tu AuthController devuelve { user, token }
+      const tok = data.token ?? data['token'];
+      const u = data.user ?? data['user'] ?? null;
+
+      if (tok) {
+        localStorage.setItem('token', tok);
+        setToken(tok);
+      }
+      if (u) {
+        setUser(u);
+        setUserId(u.id || u._id || 'user-123');
+        localStorage.setItem('user', JSON.stringify(u));
+      } else {
+        // Si no vino user, al menos setear username simple
+        setUser({ username: authForm.username });
+      }
+
+      setShowLogin(false);
+      setAuthForm({ username: '', email: '', password: '' });
+      alert(`Bienvenido, ${authForm.username}`);
+    } catch (err) {
+      console.error('handleLogin error:', err);
+      alert('Error al iniciar sesión (conexión)');
+    }
+  };
+
+  // Register -> llama al endpoint register
+  const handleRegister = async () => {
+    try {
+      const res = await fetch(`${API_URL}/users/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: authForm.username,
+          email: authForm.email,
+          password: authForm.password,
+        }),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.error('Register failed:', res.status, txt);
+        alert('Error al registrarse');
+        return;
+      }
+      // normalmente register devuelve user + token; aquí avisamos al usuario
+      const data = await res.json().catch(() => ({}));
+      alert('Registro exitoso. Ahora puedes iniciar sesión.');
+      setShowRegister(false);
+      setShowLogin(true);
+      setAuthForm({ username: '', email: '', password: '' });
+    } catch (err) {
+      console.error('handleRegister error:', err);
+      alert('Error al registrarse (conexión)');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+    setUserId('user-123');
+    alert('Sesión cerrada');
+  };
+
+  // -----------------------
+  // ORIGINAL FUNCTIONS (preservadas y sin cambios lógicos)
+  // -----------------------
   const fetchBooks = async () => {
     try {
       setLoading(true);
@@ -357,18 +484,48 @@ export default function App() {
         <div className="container flex items-center justify-between mx-auto">
           <h1 className="text-3xl font-bold">📚 Librería Telemática</h1>
 
-          <button
-            onClick={() => setShowCart(!showCart)}
-            className="relative flex items-center gap-2 px-4 py-2 text-indigo-600 transition-colors bg-white rounded-lg hover:bg-indigo-50"
-          >
-            <ShoppingCart size={20} />
-            <span>Carrito</span>
-            {getCartItemCount() > 0 && (
-              <span className="absolute flex items-center justify-center w-6 h-6 text-xs text-white bg-red-500 rounded-full -top-2 -right-2">
-                {getCartItemCount()}
-              </span>
+          <div className="flex items-center gap-3">
+            {/* User UI */}
+            {user ? (
+              <>
+                <span className="text-sm font-medium">👋 {user.username || user.email || 'Usuario'}</span>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1 text-sm bg-red-500 rounded hover:bg-red-600"
+                >
+                  Cerrar sesión
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowLogin(true)}
+                  className="px-3 py-1 text-sm text-indigo-600 bg-white rounded hover:bg-indigo-50"
+                >
+                  Iniciar sesión
+                </button>
+                <button
+                  onClick={() => setShowRegister(true)}
+                  className="px-3 py-1 text-sm text-green-700 bg-green-100 rounded hover:bg-green-200"
+                >
+                  Registrarse
+                </button>
+              </>
             )}
-          </button>
+
+            <button
+              onClick={() => setShowCart(!showCart)}
+              className="relative flex items-center gap-2 px-4 py-2 text-indigo-600 transition-colors bg-white rounded-lg hover:bg-indigo-50"
+            >
+              <ShoppingCart size={20} />
+              <span>Carrito</span>
+              {getCartItemCount() > 0 && (
+                <span className="absolute flex items-center justify-center w-6 h-6 text-xs text-white bg-red-500 rounded-full -top-2 -right-2">
+                  {getCartItemCount()}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -507,22 +664,22 @@ export default function App() {
                         </div>
                       </div>
                     ))}
-                  </div>
 
-                  <div className="pt-4 mb-4 border-t">
-                    <div className="flex items-center justify-between mb-4 text-xl font-bold">
-                      <span>Total:</span>
-                      <span className="text-indigo-600">${getCartTotal().toLocaleString()}</span>
+                    <div className="pt-4 mb-4 border-t">
+                      <div className="flex items-center justify-between mb-4 text-xl font-bold">
+                        <span>Total:</span>
+                        <span className="text-indigo-600">${getCartTotal().toLocaleString()}</span>
+                      </div>
+
+                      <button onClick={() => clearCart()} className="w-full py-3 mb-3 text-white transition-colors bg-red-500 rounded-lg hover:bg-red-600">
+                        Vaciar Carrito
+                      </button>
+
+                      <button onClick={processOrder} className="flex items-center justify-center w-full gap-2 py-3 text-white transition-colors bg-green-600 rounded-lg hover:bg-green-700">
+                        <Package size={20} />
+                        Confirmar Pedido
+                      </button>
                     </div>
-
-                    <button onClick={() => clearCart()} className="w-full py-3 mb-3 text-white transition-colors bg-red-500 rounded-lg hover:bg-red-600">
-                      Vaciar Carrito
-                    </button>
-
-                    <button onClick={processOrder} className="flex items-center justify-center w-full gap-2 py-3 text-white transition-colors bg-green-600 rounded-lg hover:bg-green-700">
-                      <Package size={20} />
-                      Confirmar Pedido
-                    </button>
                   </div>
                 </>
               )}
@@ -589,6 +746,85 @@ export default function App() {
                   {processingPayment ? 'Procesando...' : 'Pagar ahora'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LOGIN Modal */}
+      {showLogin && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
+          <div className="w-full max-w-sm p-6 bg-white rounded-lg shadow-lg">
+            <h2 className="mb-4 text-xl font-bold text-center">Iniciar Sesión</h2>
+            <input
+              className="w-full p-2 mb-3 border rounded"
+              placeholder="Usuario"
+              value={authForm.username}
+              onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+            />
+            <input
+              type="password"
+              className="w-full p-2 mb-3 border rounded"
+              placeholder="Contraseña"
+              value={authForm.password}
+              onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleLogin}
+                className="flex-1 py-2 text-white bg-indigo-600 rounded hover:bg-indigo-700"
+              >
+                Entrar
+              </button>
+              <button
+                onClick={() => { setShowLogin(false); setShowRegister(true); }}
+                className="flex-1 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Registrarse
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTER Modal */}
+      {showRegister && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
+          <div className="w-full max-w-sm p-6 bg-white rounded-lg shadow-lg">
+            <h2 className="mb-4 text-xl font-bold text-center">Registrarse</h2>
+            <input
+              className="w-full p-2 mb-3 border rounded"
+              placeholder="Usuario"
+              value={authForm.username}
+              onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+            />
+            <input
+              type="email"
+              className="w-full p-2 mb-3 border rounded"
+              placeholder="Correo"
+              value={authForm.email}
+              onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+            />
+            <input
+              type="password"
+              className="w-full p-2 mb-3 border rounded"
+              placeholder="Contraseña"
+              value={authForm.password}
+              onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleRegister}
+                className="flex-1 py-2 text-white bg-green-600 rounded hover:bg-green-700"
+              >
+                Registrarse
+              </button>
+              <button
+                onClick={() => { setShowRegister(false); setShowLogin(true); }}
+                className="flex-1 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
