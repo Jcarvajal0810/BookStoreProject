@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package cart;
+
+service CartService {
+  rpc ClearCart (UserCartRequest) returns (CartResponse);
+}
+
+message UserCartRequest {
+  string user_id = 1;
+}
+
+message CartResponse {
+  bool success = 1;
+  string message = 2;
+}
+

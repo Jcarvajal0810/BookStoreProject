@@ -1,6 +1,7 @@
 ﻿version: '3.8'
 
 services:
+  # 🧑‍💻 USER SERVICE
   user-service:
     build: ./user-service
     container_name: bs2_user
@@ -12,6 +13,7 @@ services:
       - JWT_SECRET=WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54=
     restart: unless-stopped
 
+  # 🕒 USER SCHEDULER
   user-scheduler:
     build: ./user-scheduler
     container_name: bs2_user_scheduler
@@ -22,6 +24,7 @@ services:
       - user-service
     restart: unless-stopped
 
+  # 📚 CATALOG SERVICE
   catalog:
     build: ./catalog
     container_name: bs2_catalog
@@ -31,6 +34,7 @@ services:
       - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0
     restart: unless-stopped
 
+  # 🧾 ORDER SERVICE
   order:
     build: ./order
     container_name: bs2_order
@@ -38,8 +42,12 @@ services:
       - "4000:4000"
     environment:
       - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0
+      - IN_DOCKER=true
+    depends_on:
+      - inventory-grpc
     restart: unless-stopped
 
+  # 🛒 CART SERVICE
   cart:
     build: ./cart-service
     container_name: bs2_cart
@@ -50,9 +58,11 @@ services:
       - PORT=5000
     restart: unless-stopped
 
+  # 📦 INVENTORY REST (FastAPI)
   inventory:
     build: ./inventary-service
     container_name: bs2_inventory
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     environment:
@@ -60,6 +70,18 @@ services:
       - PORT=8000
     restart: unless-stopped
 
+  # ⚙️ INVENTORY gRPC SERVER
+  inventory-grpc:
+    build:
+      context: ./inventary-service
+      dockerfile: Dockerfile
+    container_name: bs2_inventory_grpc
+    command: ["python", "src/grpc_server.py"]
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+
+  # 💳 PAYMENT SERVICE
   payment:
     build: ./payment-service
     container_name: payment-service-payu
@@ -75,6 +97,7 @@ services:
       - PAYU_PUBLIC_KEY=PKaC6H4cEDJD919n705L544kSU
     restart: unless-stopped
 
+  # 🚪 API GATEWAY
   api-gateway:
     build: ./api-gateway
     container_name: bs2_gateway
@@ -87,6 +110,7 @@ services:
       - ORDER_SERVICE_URL=http://order:4000
       - PAYMENT_SERVICE_URL=http://payment:7000
       - INVENTORY_SERVICE_URL=http://inventory:8000
+      - INVENTORY_GRPC_URL=inventory-grpc:50051
       - USER_SERVICE_URL=http://user-service:6000
     depends_on:
       - user-service
@@ -95,8 +119,10 @@ services:
       - order
       - payment
       - inventory
+      - inventory-grpc
     restart: unless-stopped
 
+  # 💻 FRONTEND
   frontend:
     build: ./Front-end-BookStore
     container_name: bs2_frontend
@@ -104,9 +130,9 @@ services:
       - "3500:3500"
     environment:
       - VITE_API_GATEWAY=http://localhost:4500
-    restart: unless-stopped
     depends_on:
       - api-gateway
+    restart: unless-stopped
 
 volumes:
   mongo_data:
