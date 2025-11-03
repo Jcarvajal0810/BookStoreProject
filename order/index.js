@@ -1,12 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const inventoryClient = require('./grpc/inventoryClient'); // <-- nuestro cliente gRPC
+const InventoryClient = require('./grpc/inventoryClient'); // Cliente gRPC Inventory
+const { processPayment } = require('./grpc/paymentClient'); // Cliente gRPC Payment
 
 const app = express();
 app.use(express.json());
 
-// ====== CONFIGURACIÓN DE VARIABLES Y VERIFICACIÓN ======
+// ====== CONFIGURACIÓN DE VARIABLES ======
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI;
 
@@ -15,7 +16,7 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-// ====== CONEXIÓN A MONGODB ATLAS ======
+// ====== CONEXIÓN A MONGODB ======
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log('Conectado a MongoDB Atlas - Order Service'))
@@ -46,7 +47,10 @@ const orderSchema = new mongoose.Schema(
 
 const Order = mongoose.model('Order', orderSchema);
 
-// ====== ENDPOINTS DE LA API (RUTAS) ======
+// ====== INSTANCIAR CLIENTE INVENTORY ======
+const inventoryClient = new InventoryClient();
+
+// ====== ENDPOINTS ======
 
 // Obtener todas las órdenes
 app.get('/api/orders', async (req, res) => {
@@ -80,38 +84,47 @@ app.post('/api/orders', async (req, res) => {
       return res.status(400).json({ message: 'Faltan campos obligatorios.' });
     }
 
-    // 1️⃣ Consultar stock disponible en Inventory gRPC
-    await new Promise((resolve, reject) => {
-      inventoryClient.CheckStock({ book_id }, (err, response) => {
-        if (err) return reject(err);
-        if (!response.in_stock || response.available_units < quantity) {
-          return reject(new Error('Stock insuficiente'));
-        }
-        resolve();
-      });
-    });
+    //  Consultar stock disponible en Inventory gRPC
+    const stockResp = await inventoryClient.checkStock(book_id);
+    if (!stockResp.in_stock || stockResp.available_units < quantity) {
+      return res.status(400).json({ message: 'Stock insuficiente' });
+    }
 
-    // 2️⃣ Reservar stock
-    await new Promise((resolve, reject) => {
-      inventoryClient.ReserveStock({ book_id, quantity }, (err, response) => {
-        if (err) return reject(err);
-        if (!response.success) return reject(new Error(response.message));
-        resolve();
-      });
-    });
+    //  Reservar stock temporal
+    const reserveResp = await inventoryClient.reserveStock(book_id, quantity);
+    if (!reserveResp.success) {
+      return res.status(400).json({ message: reserveResp.message });
+    }
 
-    // 3️⃣ Crear la orden en MongoDB
+    //  Crear la orden en MongoDB
     const total = quantity * price;
     const newOrder = new Order({ userId, book_id, quantity, price, total });
     const savedOrder = await newOrder.save();
 
-    // 4️⃣ Confirmar la reducción de stock
-    inventoryClient.ConfirmStockReduction({ book_id, quantity }, (err, response) => {
-      if (err) console.error('Error confirmando stock:', err.message);
-    });
+    //  Procesar pago vía Payment Service gRPC
+    const paymentResp = await processPayment(
+      savedOrder._id.toString(),
+      savedOrder.userId,
+      savedOrder.total,
+      "card" // método de pago ejemplo
+    );
 
+    if (!paymentResp.success) {
+      // Pago fallido → revertir la orden y stock
+      await Order.findByIdAndDelete(savedOrder._id);
+      // Podrías agregar CancelStock si lo tenés en Inventory gRPC
+      return res.status(400).json({ message: 'Pago fallido: ' + paymentResp.message });
+    }
+
+    console.log('Pago exitoso, transaction_id:', paymentResp.transaction_id);
+
+    //  Confirmar reducción de stock permanente
+    await inventoryClient.confirmStock(book_id, quantity);
+
+    //  Devolver orden al cliente
     res.status(201).json(savedOrder);
   } catch (err) {
+    console.error(err);
     res.status(400).json({ message: err.message });
   }
 });
@@ -149,4 +162,3 @@ app.delete('/api/orders/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Order Service corriendo en el puerto ${PORT}`);
 });
-

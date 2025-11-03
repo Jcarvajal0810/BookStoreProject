@@ -17,13 +17,12 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 const inventoryProto = grpc.loadPackageDefinition(packageDefinition).inventory;
 
 // Detectar si estamos dentro de Docker
-const isDocker = process.env.IN_DOCKER === 'true'; // puedes definir esto en tu docker-compose o Dockerfile
+const isDocker = process.env.IN_DOCKER === 'true';
 const host = isDocker ? 'inventory-grpc:50051' : 'localhost:50051';
 
-// Crear cliente
+// Cliente gRPC
 const client = new inventoryProto.InventoryService(host, grpc.credentials.createInsecure());
 
-// Wrappers async para usar await
 class InventoryClient {
   async checkStock(bookId) {
     return new Promise((resolve, reject) => {
