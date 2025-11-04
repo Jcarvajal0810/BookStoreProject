@@ -4,7 +4,6 @@ import (
     "context"
     "log"
     "net"
-
     pb "payment-service/payment"
     "google.golang.org/grpc"
 )
@@ -24,18 +23,17 @@ func (s *PaymentServer) ProcessPayment(ctx context.Context, req *pb.PaymentReque
     }, nil
 }
 
-//  Función para iniciar el servidor (sin main)
-func StartGRPCServer() {
+// Función para iniciar el servidor (ahora retorna error)
+func StartGRPCServer() error {
     lis, err := net.Listen("tcp", ":50052")
     if err != nil {
-        log.Fatalf("Error al escuchar: %v", err)
+        return err
     }
-
+    
     grpcServer := grpc.NewServer()
     pb.RegisterPaymentServiceServer(grpcServer, &PaymentServer{})
-
-    log.Println("Servidor Payment gRPC corriendo en :50052")
-    if err := grpcServer.Serve(lis); err != nil {
-        log.Fatalf("Error al iniciar el servidor: %v", err)
-    }
+    
+    log.Println("🚀 Servidor Payment gRPC corriendo en :50052")
+    
+    return grpcServer.Serve(lis)
 }

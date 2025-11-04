@@ -90,7 +90,7 @@ func CreatePayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(payment)
 }
 
-// ------------------- PROCESAR PAGO -------------------
+// ------------------- PROCESAR PAGO (Simulación PayU Sandbox) -------------------
 
 func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -102,8 +102,8 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.CardNumber == "" || req.CardHolder == "" {
-		http.Error(w, `{"error":"card data required"}`, http.StatusBadRequest)
+	if req.CardNumber == "" || req.CardHolder == "" || req.ExpiryDate == "" || req.CVV == "" {
+		http.Error(w, `{"error":"complete card data required"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -119,44 +119,19 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// -------------------------------
-	// 🔹 Llamada real (sandbox) a PayU
-	// -------------------------------
-
-	resp, err := payu.ProcessPaymentPayU(
-		payment.Reference,
-		payment.Description,
-		payment.Amount,
-		payment.Currency,
+	// 🔹 Simulación de pago con PayU
+	resp := payu.SimulatePayment(
 		req.CardNumber,
 		req.CardHolder,
 		req.ExpiryDate,
 		req.CVV,
+		payment.Amount,
 	)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"PayU request failed: %v"}`, err), http.StatusInternalServerError)
-		return
-	}
 
-	// -------------------------------
-	// 🔹 Procesar respuesta
-	// -------------------------------
-
-	newStatus := "PENDING"
-	newCode := resp.TransactionResponse.ResponseCode
-	newMsg := resp.TransactionResponse.ResponseMsg
-	txn := resp.TransactionResponse.TransactionID
-
-	switch resp.TransactionResponse.State {
-	case "APPROVED":
-		newStatus = "APPROVED"
-	case "DECLINED":
-		newStatus = "DECLINED"
-	case "ERROR":
-		newStatus = "ERROR"
-	default:
-		newStatus = "PENDING"
-	}
+	newStatus := resp.Status
+	newCode := resp.ResponseCode
+	newMsg := resp.ResponseMessage
+	txn := resp.TransactionID
 
 	update := bson.M{
 		"$set": bson.M{
@@ -224,13 +199,6 @@ func GetUserPayments(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(payments)
 }
 
-// ------------------- SIMULACIÓN WEBHOOK -------------------
-
-func WebhookSimulation(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
-
 // ------------------- ELIMINAR PAGO -------------------
 
 func DeletePayment(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +219,7 @@ func DeletePayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "reference": ref})
 }
 
-// ------------------- PAGO SIMULADO PARA PRUEBA -------------------
+// ------------------- CREAR PAGO SIMULADO (APROBADO) -------------------
 
 func CreatePaymentTest(w http.ResponseWriter, r *http.Request) {
 	var req models.CreatePaymentRequest
@@ -289,7 +257,7 @@ func CreatePaymentTest(w http.ResponseWriter, r *http.Request) {
 		Currency:        req.Currency,
 		Status:          "APPROVED",
 		ResponseCode:    "POL_APPROVED",
-		ResponseMessage: "Aprobada",
+		ResponseMessage: "Aprobada (simulada)",
 		PaymentMethod:   req.PaymentMethod,
 		Description:     req.Description,
 		BuyerEmail:      req.BuyerEmail,
@@ -303,4 +271,18 @@ func CreatePaymentTest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(payment)
+}
+
+// ------------------- WEBHOOK SIMULADO -------------------
+
+func WebhookSimulation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	response := map[string]string{
+		"status":  "ok",
+		"message": "Simulación de webhook PayU exitosa",
+		"event":   "payment.approved",
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
