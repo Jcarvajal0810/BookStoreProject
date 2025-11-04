@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package catalog;
+
+service CatalogService {
+  // Obtener detalles completos de un libro
+  rpc GetBookDetails (BookRequest) returns (BookResponse);
+  
+  // Validar precio actual de un libro
+  rpc ValidatePrice (PriceRequest) returns (PriceResponse);
+  
+  // Validar múltiples libros (para cart-service)
+  rpc ValidateBooks (ValidateBooksRequest) returns (ValidateBooksResponse);
+}
+
+message BookRequest {
+  string book_id = 1;
+}
+
+message BookResponse {
+  string book_id = 1;
+  string title = 2;
+  string author = 3;
+  double price = 4;
+  bool available = 5;
+  int32 stock = 6;
+}
+
+message PriceRequest {
+  string book_id = 1;
+}
+
+message PriceResponse {
+  double price = 1;
+  string currency = 2;
+}
+
+// Validar múltiples libros
+message BookItem {
+  string book_id = 1;
+  double expected_price = 2;
+}
+
+message ValidateBooksRequest {
+  repeated BookItem books = 1;
+}
+
+message BookValidation {
+  string book_id = 1;
+  bool exists = 2;
+  double current_price = 3;
+  bool price_changed = 4;
+  bool in_stock = 5;
+}
+
+message ValidateBooksResponse {
+  repeated BookValidation validations = 1;
+}

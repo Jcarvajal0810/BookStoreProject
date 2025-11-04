@@ -1,76 +1,67 @@
 ﻿import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import { startGrpcServer } from "./grpc/server.js"; // ← NUEVO
+import Book from "./models/book.js"; // ← NUEVO: modelo separado
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === Conexión a MongoDB Atlas (usa la variable de entorno MONGO_URI) ===
+// === Conexión a MongoDB Atlas ===
 const mongoUri = process.env.MONGO_URI;
 if (!mongoUri) {
-  console.error(" ERROR: debes definir la variable de entorno MONGO_URI apuntando a Atlas");
+  console.error(" ERROR: debes definir MONGO_URI en .env");
   process.exit(1);
 }
 
 mongoose
   .connect(mongoUri)
   .then(() => {
-    console.log(" Conectado correctamente a MongoDB Atlas (catalogdb)");
+    console.log(" Conectado a MongoDB Atlas (catalogdb)");
     try {
       const dbName = mongoose.connection.db && mongoose.connection.db.databaseName;
-      console.log(" Base de datos:", dbName || "desconocida");
+      console.log(` Base de datos: ${dbName || "desconocida"}`);
     } catch (e) {}
+
+    // ====== INICIAR SERVIDOR gRPC ======
+    startGrpcServer(); // ← NUEVO
   })
   .catch((err) => {
     console.error(" Error conectando a MongoDB Atlas:", err.message || err);
     process.exit(1);
   });
 
-// === Esquema y modelo ===
-const bookSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    author: { type: String },
-    description: { type: String },
-    image: { type: String },
-    countInStock: { type: Number, default: 0 },
-    price: { type: Number, required: true },
-  },
-  { timestamps: true }
-);
+// === RUTAS REST (Norte-Sur) ===
 
-const Book = mongoose.model("Book", bookSchema);
-
-// === RUTAS (orden: específicas antes de /:id) ===
-
-// 1) Buscar por título (query): /api/books/search?title=...
+// 1) Buscar por título
 app.get("/api/books/search", async (req, res) => {
   try {
     const q = (req.query.title || "").trim();
     if (!q) return res.status(400).json({ error: "Debes enviar query ?title=..." });
 
     const results = await Book.find({ name: { $regex: q, $options: "i" } });
-    if (!results.length) return res.status(404).json({ error: "No se encontraron libros con ese título" });
+    if (!results.length) return res.status(404).json({ error: "No se encontraron libros" });
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 2) Buscar por autor: /api/books/author/:author
+// 2) Buscar por autor
 app.get("/api/books/author/:author", async (req, res) => {
   try {
     const author = req.params.author;
     const results = await Book.find({ author: author });
-    if (!results.length) return res.status(404).json({ error: "No se encontraron libros para ese autor" });
+    if (!results.length)
+      return res.status(404).json({ error: "No se encontraron libros para ese autor" });
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3) Obtener todos: /api/books
+// 3) Obtener todos
 app.get("/api/books", async (req, res) => {
   try {
     const all = await Book.find();
@@ -80,7 +71,7 @@ app.get("/api/books", async (req, res) => {
   }
 });
 
-// 4) Obtener por ID: /api/books/:id
+// 4) Obtener por ID
 app.get("/api/books/:id", async (req, res) => {
   try {
     const book = await Book.findById(req.params.id);
@@ -91,54 +82,57 @@ app.get("/api/books/:id", async (req, res) => {
   }
 });
 
-// 5) Crear libro: POST /api/books
+// 5) Crear libro
 app.post("/api/books", async (req, res) => {
   try {
     const payload = req.body;
-    // validación mínima
     if (!payload.name || payload.price === undefined) {
-      return res.status(400).json({ error: "Faltan campos obligatorios: name y price" });
+      return res.status(400).json({ error: "Faltan campos: name y price" });
     }
     const newBook = new Book(payload);
     await newBook.save();
     res.status(201).json(newBook);
   } catch (err) {
-    res.status(400).json({ error: "Error creando el libro", details: err.message });
+    res.status(400).json({ error: "Error creando libro", details: err.message });
   }
 });
 
-// 6) Actualizar completo: PUT /api/books/:id
+// 6) Actualizar completo
 app.put("/api/books/:id", async (req, res) => {
   try {
-    const updated = await Book.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    if (!updated) return res.status(404).json({ error: "Libro no encontrado para actualizar" });
+    const updated = await Book.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) return res.status(404).json({ error: "Libro no encontrado" });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: "ID inválido o datos incorrectos", details: err.message });
   }
 });
 
-// 7) Actualizar solo stock: PATCH /api/books/:id/stock
+// 7) Actualizar solo stock
 app.patch("/api/books/:id/stock", async (req, res) => {
   try {
-    if (req.body.countInStock === undefined) return res.status(400).json({ error: "Falta countInStock en body" });
+    if (req.body.countInStock === undefined)
+      return res.status(400).json({ error: "Falta countInStock" });
     const updated = await Book.findByIdAndUpdate(
       req.params.id,
       { countInStock: req.body.countInStock },
       { new: true, runValidators: true }
     );
-    if (!updated) return res.status(404).json({ error: "Libro no encontrado para actualizar stock" });
+    if (!updated) return res.status(404).json({ error: "Libro no encontrado" });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: "ID inválido", details: err.message });
   }
 });
 
-// 8) Eliminar libro: DELETE /api/books/:id
+// 8) Eliminar libro
 app.delete("/api/books/:id", async (req, res) => {
   try {
     const deleted = await Book.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: "Libro no encontrado para eliminar" });
+    if (!deleted) return res.status(404).json({ error: "Libro no encontrado" });
     res.json({ deleted: deleted._id.toString() });
   } catch (err) {
     res.status(400).json({ error: "ID inválido" });
@@ -147,4 +141,11 @@ app.delete("/api/books/:id", async (req, res) => {
 
 // === Start server ===
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(` Catalog service running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(` Catalog Service iniciado`);
+  console.log("=".repeat(60));
+  console.log(` REST API: http://localhost:${PORT}`);
+  console.log(` gRPC Server: puerto ${process.env.GRPC_PORT || 50054}`);
+  console.log("=".repeat(60) + "\n");
+});
