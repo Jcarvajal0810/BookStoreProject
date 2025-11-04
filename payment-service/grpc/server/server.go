@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
     "context"
@@ -24,7 +24,8 @@ func (s *PaymentServer) ProcessPayment(ctx context.Context, req *pb.PaymentReque
     }, nil
 }
 
-func main() {
+//  Función para iniciar el servidor (sin main)
+func StartGRPCServer() {
     lis, err := net.Listen("tcp", ":50052")
     if err != nil {
         log.Fatalf("Error al escuchar: %v", err)
