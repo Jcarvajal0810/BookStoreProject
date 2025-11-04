@@ -20,4 +20,6 @@ public class User {
     private String password;
     private String role = "USER";
     private boolean active = true;
+    private String address;
+    private String phone;
 }
