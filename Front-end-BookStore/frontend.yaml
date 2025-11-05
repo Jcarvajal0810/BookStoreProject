@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: frontend:latest    # o la imagen subida a ECR / Docker Hub
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3500
+          env:
+            - name: VITE_API_GATEWAY
+              value: "http://api-gateway-service:4500"
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3500
+      targetPort: 3500
+      nodePort: 30080   # puedes cambiarlo si ya está ocupado
+  type: NodePort

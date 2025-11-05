@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway:latest   # usa la imagen local o la del registry
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4500
+          env:
+            - name: PORT
+              value: "4500"
+            - name: CATALOG_SERVICE_URL
+              value: "http://catalog-service:3000"
+            - name: CART_SERVICE_URL
+              value: "http://cart-service:5000"
+            - name: ORDER_SERVICE_URL
+              value: "http://order-service:4000"
+            - name: PAYMENT_SERVICE_URL

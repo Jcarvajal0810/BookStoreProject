@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment
+  labels:
+    app: payment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+    spec:
+      containers:
+        - name: payment
+          image: tomas/payment-service:latest
+          ports:
+            - containerPort: 7000
+          env:
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/paymentdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: PORT
+              value: "7000"
+            - name: PAYU_ACCOUNT_ID
+              value: "512321"
+            - name: PAYU_MERCHANT_ID
+              value: "508029"
+            - name: PAYU_API_LOGIN
+              value: "pRRXKOl8ikMmt9u"
+            - name: PAYU_API_KEY
+              value: "4Vj8eK4rloUd272L48hsrarnUA"
+            - name: PAYU_PUBLIC_KEY
+              value: "PKaC6H4cEDJD919n705L544kSU"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+spec:
+  selector:
+    app: payment
+  ports:
+    - port: 7000
+      targetPort: 7000
+  type: ClusterIP

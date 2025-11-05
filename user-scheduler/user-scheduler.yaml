@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-scheduler
+  labels:
+    app: user-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-scheduler
+  template:
+    metadata:
+      labels:
+        app: user-scheduler
+    spec:
+      containers:
+        - name: user-scheduler
+          image: tomas/user-scheduler:latest
+          env:
+            - name: USER_SERVICE_URL
+              value: "http://user-service:6000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-scheduler
+spec:
+  selector:
+    app: user-scheduler
+  ports:
+    - port: 80
+      targetPort: 6000
+  type: ClusterIP

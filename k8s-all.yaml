@@ -1,0 +1,418 @@
+# ================================
+# 🧑 USER SERVICE
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service-deployment
+  labels:
+    app: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: user-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 6000
+          env:
+            - name: PORT
+              value: "6000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: JWT_SECRET
+              value: "WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54="
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+spec:
+  selector:
+    app: user-service
+  ports:
+    - port: 6000
+      targetPort: 6000
+  type: ClusterIP
+
+# ================================
+# ⏰ USER SCHEDULER
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-scheduler-deployment
+  labels:
+    app: user-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-scheduler
+  template:
+    metadata:
+      labels:
+        app: user-scheduler
+    spec:
+      containers:
+        - name: user-scheduler
+          image: user-scheduler:latest
+          imagePullPolicy: Never
+          env:
+            - name: USER_SERVICE_URL
+              value: "http://user-service:6000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-scheduler
+spec:
+  selector:
+    app: user-scheduler
+  ports:
+    - port: 8081
+      targetPort: 8081
+  type: ClusterIP
+
+# ================================
+# 📚 CATALOG SERVICE
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-deployment
+  labels:
+    app: catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+        - name: catalog
+          image: catalog:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+spec:
+  selector:
+    app: catalog
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+
+# ================================
+# 🧺 CART SERVICE
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-deployment
+  labels:
+    app: cart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+    spec:
+      containers:
+        - name: cart
+          image: cart-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/cartdb?retryWrites=true&w=majority&appName=SharedM0"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-service
+spec:
+  selector:
+    app: cart
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP
+
+# ================================
+# 📦 ORDER SERVICE
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-deployment
+  labels:
+    app: order
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+    spec:
+      containers:
+        - name: order
+          image: order:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4000
+          env:
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: IN_DOCKER
+              value: "true"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  selector:
+    app: order
+  ports:
+    - port: 4000
+      targetPort: 4000
+  type: ClusterIP
+
+# ================================
+# 💳 PAYMENT SERVICE
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-deployment
+  labels:
+    app: payment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+    spec:
+      containers:
+        - name: payment
+          image: payment-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 7000
+          env:
+            - name: PORT
+              value: "7000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/paymentdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: PAYU_ACCOUNT_ID
+              value: "512321"
+            - name: PAYU_MERCHANT_ID
+              value: "508029"
+            - name: PAYU_API_LOGIN
+              value: "pRRXKOl8ikMmt9u"
+            - name: PAYU_API_KEY
+              value: "4Vj8eK4rloUd272L48hsrarnUA"
+            - name: PAYU_PUBLIC_KEY
+              value: "PKaC6H4cEDJD919n705L544kSU"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment
+  ports:
+    - port: 7000
+      targetPort: 7000
+  type: ClusterIP
+
+# ================================
+# 📦 INVENTORY (FASTAPI + GRPC)
+# ================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: inventory-pod
+  labels:
+    app: inventory
+spec:
+  containers:
+    - name: inventory-rest
+      image: inventory-service:latest
+      imagePullPolicy: Never
+      ports:
+        - containerPort: 8000
+      env:
+        - name: MONGO_URI
+          value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/inventorydb?retryWrites=true&w=majority&appName=SharedM0"
+        - name: PORT
+          value: "8000"
+      command: ["uvicorn"]
+      args: ["src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    - name: inventory-grpc
+      image: inventory-service:latest
+      imagePullPolicy: Never
+      ports:
+        - containerPort: 50051
+      command: ["python"]
+      args: ["src/grpc_server.py"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+spec:
+  selector:
+    app: inventory
+  ports:
+    - name: rest
+      port: 8000
+      targetPort: 8000
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+  type: ClusterIP
+
+# ================================
+# 🌐 API GATEWAY
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4500
+          env:
+            - name: PORT
+              value: "4500"
+            - name: CATALOG_SERVICE_URL
+              value: "http://catalog-service:3000"
+            - name: CART_SERVICE_URL
+              value: "http://cart-service:5000"
+            - name: ORDER_SERVICE_URL
+              value: "http://order-service:4000"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment-service:7000"
+            - name: INVENTORY_SERVICE_URL
+              value: "http://inventory-service:8000"
+            - name: INVENTORY_GRPC_URL
+              value: "inventory-service:50051"
+            - name: USER_SERVICE_URL
+              value: "http://user-service:6000"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: 4500
+      targetPort: 4500
+  type: ClusterIP
+
+# ================================
+# 💻 FRONTEND
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3500
+          env:
+            - name: VITE_API_GATEWAY
+              value: "http://api-gateway-service:4500"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3500
+      targetPort: 3500
+      nodePort: 30080
+  type: NodePort
