@@ -1,11 +1,13 @@
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const path = require('path');
+import grpc from '@grpc/grpc-js';
+import protoLoader from '@grpc/proto-loader';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Ruta al proto
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const PROTO_PATH = path.join(__dirname, 'inventory.proto');
 
-// Carga del proto
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
   longs: String,
@@ -16,40 +18,54 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 
 const inventoryProto = grpc.loadPackageDefinition(packageDefinition).inventory;
 
-// Detectar si estamos dentro de Docker
-const isDocker = process.env.IN_DOCKER === 'true';
-const host = isDocker ? 'inventory-grpc:50051' : 'localhost:50051';
-
-// Cliente gRPC
-const client = new inventoryProto.InventoryService(host, grpc.credentials.createInsecure());
-
 class InventoryClient {
-  async checkStock(bookId) {
+  constructor() {
+    const INVENTORY_GRPC_URL = process.env.INVENTORY_GRPC_URL || 'localhost:50051';
+    this.client = new inventoryProto.InventoryService(
+      INVENTORY_GRPC_URL,
+      grpc.credentials.createInsecure()
+    );
+    console.log(`🔌 InventoryClient conectado a ${INVENTORY_GRPC_URL}`);
+  }
+
+  checkStock(bookId) {
     return new Promise((resolve, reject) => {
-      client.CheckStock({ book_id: bookId }, (err, response) => {
-        if (err) return reject(err);
+      this.client.CheckStock({ book_id: bookId }, (err, response) => {
+        if (err) {
+          console.error('[InventoryClient]  Error en CheckStock:', err.message);
+          return reject(err);
+        }
+        console.log(`[InventoryClient]  CheckStock: ${bookId} - ${response.available_units} unidades`);
         resolve(response);
       });
     });
   }
 
-  async reserveStock(bookId, quantity) {
+  reserveStock(bookId, quantity) {
     return new Promise((resolve, reject) => {
-      client.ReserveStock({ book_id: bookId, quantity }, (err, response) => {
-        if (err) return reject(err);
+      this.client.ReserveStock({ book_id: bookId, quantity }, (err, response) => {
+        if (err) {
+          console.error('[InventoryClient] ❌ Error en ReserveStock:', err.message);
+          return reject(err);
+        }
+        console.log(`[InventoryClient]  ReserveStock: ${bookId} - ${quantity} unidades`);
         resolve(response);
       });
     });
   }
 
-  async confirmStock(bookId, quantity) {
+  confirmStock(bookId, quantity) {
     return new Promise((resolve, reject) => {
-      client.ConfirmStockReduction({ book_id: bookId, quantity }, (err, response) => {
-        if (err) return reject(err);
+      this.client.ConfirmStockReduction({ book_id: bookId, quantity }, (err, response) => {
+        if (err) {
+          console.error('[InventoryClient]  Error en ConfirmStock:', err.message);
+          return reject(err);
+        }
+        console.log(`[InventoryClient]  ConfirmStock: ${bookId} - ${quantity} unidades`);
         resolve(response);
       });
     });
   }
 }
 
-module.exports = InventoryClient;
+export default InventoryClient;

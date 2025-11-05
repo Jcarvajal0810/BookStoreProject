@@ -1,6 +1,10 @@
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const path = require('path');
+import grpc from '@grpc/grpc-js';
+import protoLoader from '@grpc/proto-loader';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PROTO_PATH = path.join(__dirname, 'cart.proto');
 
@@ -21,7 +25,7 @@ class CartClient {
       CART_GRPC_URL,
       grpc.credentials.createInsecure()
     );
-    console.log(` CartClient conectado a ${CART_GRPC_URL}`);
+    console.log(`🔌 CartClient conectado a ${CART_GRPC_URL}`);
   }
 
   /**
@@ -57,4 +61,4 @@ class CartClient {
   }
 }
 
-module.exports = CartClient;
+export default CartClient;

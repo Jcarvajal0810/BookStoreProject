@@ -1,11 +1,13 @@
-const grpc = require("@grpc/grpc-js");
-const protoLoader = require("@grpc/proto-loader");
-const path = require("path");
+import grpc from '@grpc/grpc-js';
+import protoLoader from '@grpc/proto-loader';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Ruta al proto de Payment
-const PROTO_PATH = path.join(__dirname, "payment.proto");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Cargar proto
+const PROTO_PATH = path.join(__dirname, 'payment.proto');
+
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
   longs: String,
@@ -13,25 +15,34 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   defaults: true,
   oneofs: true,
 });
+
 const paymentProto = grpc.loadPackageDefinition(packageDefinition).payment;
 
-// Crear cliente
-const client = new paymentProto.PaymentService(
-  "localhost:50052",
-  grpc.credentials.createInsecure()
-);
-
-// Función para procesar pago
-function processPayment(orderId, userId, amount, paymentMethod) {
+export function processPayment(orderId, userId, amount, paymentMethod) {
   return new Promise((resolve, reject) => {
+    const PAYMENT_GRPC_URL = process.env.PAYMENT_GRPC_URL || 'localhost:50052';
+    const client = new paymentProto.PaymentService(
+      PAYMENT_GRPC_URL,
+      grpc.credentials.createInsecure()
+    );
+
+    console.log(`[PaymentClient]  Procesando pago para orden ${orderId}`);
+
     client.ProcessPayment(
-      { order_id: orderId, user_id: userId, amount, payment_method: paymentMethod },
+      { 
+        order_id: orderId, 
+        user_id: userId, 
+        amount, 
+        payment_method: paymentMethod 
+      },
       (err, response) => {
-        if (err) return reject(err);
+        if (err) {
+          console.error('[PaymentClient]  Error al procesar pago:', err.message);
+          return reject(err);
+        }
+        console.log(`[PaymentClient]  Pago procesado: ${response.transaction_id}`);
         resolve(response);
       }
     );
   });
 }
-
-module.exports = { processPayment };

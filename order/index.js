@@ -1,9 +1,9 @@
-require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
-const InventoryClient = require('./grpc/inventoryClient');
-const { processPayment } = require('./grpc/paymentClient');
-const CartClient = require('./grpc/cartClient'); // ← NUEVO
+import 'dotenv/config';
+import express from 'express';
+import mongoose from 'mongoose';
+import InventoryClient from './grpc/inventoryClient.js';
+import { processPayment } from './grpc/paymentClient.js';
+import CartClient from './grpc/cartClient.js';
 
 const app = express();
 app.use(express.json());
@@ -54,7 +54,7 @@ const Order = mongoose.model('Order', orderSchema);
 
 // ====== CLIENTES gRPC ======
 const inventoryClient = new InventoryClient();
-const cartClient = new CartClient(); // ← NUEVO
+const cartClient = new CartClient();
 
 // ====== ENDPOINTS REST ======
 
@@ -94,7 +94,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
     // ===== PASO 1: Obtener items del carrito vía gRPC =====
     console.log('\n [1/7] Obteniendo items del carrito (gRPC)...');
     const cartData = await cartClient.getCartItems(userId);
-    
+
     if (!cartData.items || cartData.items.length === 0) {
       console.log('  Carrito vacío');
       return res.status(400).json({ message: 'El carrito está vacío' });
@@ -111,8 +111,8 @@ app.post('/api/orders/from-cart', async (req, res) => {
       const stockResp = await inventoryClient.checkStock(item.book_id);
       if (!stockResp.in_stock || stockResp.available_units < item.quantity) {
         console.log(` Stock insuficiente para ${item.book_id}`);
-        return res.status(400).json({ 
-          message: `Stock insuficiente para libro: ${item.title}` 
+        return res.status(400).json({
+          message: `Stock insuficiente para libro: ${item.title}`
         });
       }
       console.log(`   ✓ ${item.title}: ${stockResp.available_units} disponibles`);
@@ -140,8 +140,8 @@ app.post('/api/orders/from-cart', async (req, res) => {
 
     // ===== PASO 4: Crear orden en MongoDB =====
     console.log('\n [4/7] Creando orden en base de datos...');
-    const newOrder = new Order({ 
-      userId, 
+    const newOrder = new Order({
+      userId,
       items: cartData.items.map(item => ({
         book_id: item.book_id,
         title: item.title,
@@ -168,15 +168,15 @@ app.post('/api/orders/from-cart', async (req, res) => {
       console.log(' Revirtiendo orden...');
       await Order.findByIdAndDelete(savedOrder._id);
       // TODO: Revertir reservas de stock
-      return res.status(400).json({ 
-        message: 'Pago fallido: ' + paymentResp.message 
+      return res.status(400).json({
+        message: 'Pago fallido: ' + paymentResp.message
       });
     }
 
     console.log(` Pago exitoso - Transaction ID: ${paymentResp.transaction_id}`);
 
     // ===== PASO 6: Confirmar reducción de stock =====
-    console.log('\n✔️  [6/7] Confirmando reducción de stock (gRPC)...');
+    console.log('\n  [6/7] Confirmando reducción de stock (gRPC)...');
     for (const item of cartData.items) {
       await inventoryClient.confirmStock(item.book_id, item.quantity);
       console.log(`   ✓ Stock confirmado: ${item.title}`);
@@ -184,7 +184,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
     console.log(' Stock reducido permanentemente');
 
     // ===== PASO 7: Vaciar el carrito =====
-    console.log('\n🧹 [7/7] Vaciando carrito (gRPC)...');
+    console.log('\n [7/7] Vaciando carrito (gRPC)...');
     const clearResp = await cartClient.clearCart(userId);
     if (clearResp.success) {
       console.log(' Carrito vaciado exitosamente');
@@ -192,29 +192,29 @@ app.post('/api/orders/from-cart', async (req, res) => {
       console.warn('  No se pudo vaciar el carrito:', clearResp.message);
     }
 
-   // ===== ACTUALIZAR ESTADO DE ORDEN =====
-await Order.findByIdAndUpdate(savedOrder._id, { 
-  status: 'PAID',
-  payment_transaction_id: paymentResp.transaction_id 
-});
+    // ===== ACTUALIZAR ESTADO DE ORDEN =====
+    await Order.findByIdAndUpdate(savedOrder._id, {
+      status: 'PAID',
+      payment_transaction_id: paymentResp.transaction_id
+    });
 
-console.log(`\n${'='.repeat(60)}`);
-console.log(`🎉 ORDEN COMPLETADA EXITOSAMENTE - ID: ${savedOrder._id}`);
-console.log(`${'='.repeat(60)}\n`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(` ORDEN COMPLETADA EXITOSAMENTE - ID: ${savedOrder._id}`);
+    console.log(`${'='.repeat(60)}\n`);
 
-res.status(201).json({
-  success: true,
-  order_id: savedOrder._id,
-  total: savedOrder.total,
-  items_count: savedOrder.items.length,
-  transaction_id: paymentResp.transaction_id,
-  message: 'Orden creada y pago procesado exitosamente'
-});
+    res.status(201).json({
+      success: true,
+      order_id: savedOrder._id,
+      total: savedOrder.total,
+      items_count: savedOrder.items.length,
+      transaction_id: paymentResp.transaction_id,
+      message: 'Orden creada y pago procesado exitosamente'
+    });
 
-} catch (err) {
-  console.error('\n❌ ERROR EN FLUJO DE ORDEN:', err);
-  res.status(500).json({ message: 'Error procesando orden: ' + err.message });
-}
+  } catch (err) {
+    console.error('\n ERROR EN FLUJO DE ORDEN:', err);
+    res.status(500).json({ message: 'Error procesando orden: ' + err.message });
+  }
 });
 
 // ====== ENDPOINT LEGACY: Orden individual =====
@@ -237,10 +237,10 @@ app.post('/api/orders', async (req, res) => {
     }
 
     const total = quantity * price;
-    const newOrder = new Order({ 
-      userId, 
+    const newOrder = new Order({
+      userId,
       items: [{ book_id, quantity, price, title: 'N/A' }],
-      total 
+      total
     });
     const savedOrder = await newOrder.save();
 
