@@ -1,7 +1,7 @@
 ﻿version: '3.8'
 
 services:
-  # 🧑‍💻 USER SERVICE
+  #  USER SERVICE
   user-service:
     build: ./user-service
     container_name: bs2_user
@@ -13,7 +13,7 @@ services:
       - JWT_SECRET=WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54=
     restart: unless-stopped
 
-  # 🕒 USER SCHEDULER
+  #  USER SCHEDULER
   user-scheduler:
     build: ./user-scheduler
     container_name: bs2_user_scheduler
@@ -24,7 +24,7 @@ services:
       - user-service
     restart: unless-stopped
 
-  # 📚 CATALOG SERVICE
+  #  CATALOG SERVICE
   catalog:
     build: ./catalog
     container_name: bs2_catalog
@@ -34,7 +34,7 @@ services:
       - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0
     restart: unless-stopped
 
-  # 🧾 ORDER SERVICE
+  #  ORDER SERVICE
   order:
     build: ./order
     container_name: bs2_order
@@ -47,7 +47,7 @@ services:
       - inventory-grpc
     restart: unless-stopped
 
-  # 🛒 CART SERVICE
+  #  CART SERVICE
   cart:
     build: ./cart-service
     container_name: bs2_cart
@@ -58,7 +58,7 @@ services:
       - PORT=5000
     restart: unless-stopped
 
-  # 📦 INVENTORY REST (FastAPI)
+  #  INVENTORY REST (FastAPI)
   inventory:
     build: ./inventary-service
     container_name: bs2_inventory
@@ -70,7 +70,7 @@ services:
       - PORT=8000
     restart: unless-stopped
 
-  # ⚙️ INVENTORY gRPC SERVER
+  #  INVENTORY gRPC SERVER
   inventory-grpc:
     build:
       context: ./inventary-service
@@ -81,7 +81,7 @@ services:
       - "50051:50051"
     restart: unless-stopped
 
-  # 💳 PAYMENT SERVICE
+  #  PAYMENT SERVICE
   payment:
     build: ./payment-service
     container_name: payment-service-payu
@@ -97,7 +97,7 @@ services:
       - PAYU_PUBLIC_KEY=PKaC6H4cEDJD919n705L544kSU
     restart: unless-stopped
 
-  # 🚪 API GATEWAY
+  #  API GATEWAY
   api-gateway:
     build: ./api-gateway
     container_name: bs2_gateway
@@ -122,7 +122,7 @@ services:
       - inventory-grpc
     restart: unless-stopped
 
-  # 💻 FRONTEND
+  #  FRONTEND
   frontend:
     build: ./Front-end-BookStore
     container_name: bs2_frontend
