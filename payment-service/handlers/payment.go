@@ -10,6 +10,7 @@ import (
 	"payment-service/payu"
 	"regexp"
 	"time"
+	"payment-service/rabbit"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -85,6 +86,22 @@ func CreatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 	payment.ID = result.InsertedID.(primitive.ObjectID).Hex()
 
+	// 🔹 Publicar evento de pago creado
+	event := map[string]interface{}{
+		"event":     "payment_created",
+		"reference": payment.Reference,
+		"orderId":   payment.OrderID,
+		"userId":    payment.UserID,
+		"amount":    payment.Amount,
+		"status":    payment.Status,
+	}
+	body, _ := json.Marshal(event)
+
+	if err := rabbit.Publish("payment_events", string(body)); err != nil {
+		fmt.Printf("Error enviando mensaje a RabbitMQ: %v\n", err)
+	}
+
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(payment)
@@ -154,6 +171,21 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error":"fetch after update failed"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// 🔹 Publicar evento de pago procesado
+	event := map[string]interface{}{
+		"event":     "payment_processed",
+		"reference": updated.Reference,
+		"orderId":   updated.OrderID,
+		"userId":    updated.UserID,
+		"amount":    updated.Amount,
+		"status":    updated.Status,
+	}
+	body, _ := json.Marshal(event)
+
+	if err := rabbit.Publish("payment_events", string(body)); err != nil {
+		fmt.Printf("Error enviando mensaje a RabbitMQ: %v\n", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -267,6 +299,18 @@ func CreatePaymentTest(w http.ResponseWriter, r *http.Request) {
 
 	result, _ := database.PaymentsCollection.InsertOne(context.Background(), payment)
 	payment.ID = result.InsertedID.(primitive.ObjectID).Hex()
+	//RABBIT MQQQ
+	event := map[string]interface{}{
+		"event":     "payment_test_created",
+		"reference": payment.Reference,
+		"orderId":   payment.OrderID,
+		"userId":    payment.UserID,
+		"amount":    payment.Amount,
+		"status":    payment.Status,
+	}
+	body, _ := json.Marshal(event)
+	rabbit.Publish("payment_events", string(body))
+	
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

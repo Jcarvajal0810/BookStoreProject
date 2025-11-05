@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import InventoryClient from './grpc/inventoryClient.js';
 import { processPayment } from './grpc/paymentClient.js';
 import CartClient from './grpc/cartClient.js';
+import { connectRabbitMQ, publishMessage } from './rabbitmq.js'; // IMPORTACIÓN CORRECTA
 
 const app = express();
 app.use(express.json());
@@ -20,11 +21,25 @@ if (!MONGO_URI) {
 // ====== CONEXIÓN MONGODB ======
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log(' Conectado a MongoDB - Order Service'))
+  .then(() => console.log('Conectado a MongoDB - Order Service'))
   .catch((err) => {
-    console.error(' Error conectando a MongoDB:', err.message);
+    console.error('Error conectando a MongoDB:', err.message);
     process.exit(1);
   });
+
+// ====== INICIAR CONEXIÓN RABBITMQ ======
+let rabbitConnected = false;
+
+const startRabbit = async () => {
+  try {
+    await connectRabbitMQ();
+    rabbitConnected = true;
+    console.log('RabbitMQ conectado correctamente');
+  } catch (err) {
+    console.error('Error conectando a RabbitMQ:', err);
+  }
+};
+startRabbit();
 
 // ====== MODELO DE ORDEN ======
 const VALID_STATUSES = ['CREATED', 'PAID', 'SHIPPED', 'DELIVERED'];
@@ -153,6 +168,24 @@ app.post('/api/orders/from-cart', async (req, res) => {
     });
     const savedOrder = await newOrder.save();
     console.log(` Orden creada con ID: ${savedOrder._id}`);
+    // ===== PUBLICAR EVENTO EN RABBITMQ =====
+    if (rabbitConnected) {
+      await publishMessage(
+        "order_exchange",
+        "order.created",
+        {
+          orderId: savedOrder._id,
+          userId: savedOrder.userId,
+          total: savedOrder.total,
+          items: savedOrder.items,
+          status: savedOrder.status,
+        }
+      );
+      console.log("Evento 'order.created' publicado en RabbitMQ");
+    } else {
+      console.warn("RabbitMQ no conectado, evento no publicado");
+    }
+
 
     // ===== PASO 5: Procesar pago vía Payment Service =====
     console.log('\n [5/7] Procesando pago (gRPC)...');

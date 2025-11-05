@@ -17,6 +17,14 @@ spec:
           value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/inventarydb?retryWrites=true&w=majority&appName=SharedM0"
         - name: PORT
           value: "8000"
+        - name: RABBITMQ_HOST
+          value: "rabbitmq"      # <-- coincide con el nombre del Service
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: RABBITMQ_USER
+          value: "admin"
+        - name: RABBITMQ_PASS
+          value: "admin"  
       command: ["uvicorn"]
       args: ["src.main:app", "--host", "0.0.0.0", "--port", "8000"]
       resources:

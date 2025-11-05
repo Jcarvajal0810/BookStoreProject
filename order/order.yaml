@@ -24,6 +24,14 @@ spec:
               value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0"
             - name: IN_DOCKER
               value: "true"
+            - name: RABBITMQ_HOST
+              value: "rabbitmq"      # <-- coincide con el nombre del Service
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USER
+              value: "admin"
+            - name: RABBITMQ_PASS
+              value: "admin"
 ---
 apiVersion: v1
 kind: Service
