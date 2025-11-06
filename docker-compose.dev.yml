@@ -40,11 +40,18 @@ services:
     container_name: bs2_order
     ports:
       - "4000:4000"
+      - "50056:50056"  #  Puerto gRPC
     environment:
       - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0
+      - INVENTORY_GRPC_URL=inventory-grpc:50051
+      - PAYMENT_GRPC_URL=payment:50052
+      - CART_GRPC_URL=cart:50053
+      - PORT=4000
       - IN_DOCKER=true
     depends_on:
       - inventory-grpc
+      - payment
+      - cart
     restart: unless-stopped
 
   #  CART SERVICE
@@ -79,6 +86,8 @@ services:
     command: ["python", "src/grpc_server.py"]
     ports:
       - "50051:50051"
+    environment:
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/inventorydb?retryWrites=true&w=majority&appName=SharedM0
     restart: unless-stopped
 
   #  PAYMENT SERVICE

@@ -2,16 +2,27 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-// Dentro de Docker, usa el nombre del contenedor (no localhost)
 const USER_URL = process.env.USER_SERVICE_URL || 'http://user-service:6000';
 
 router.all('*', async (req, res) => {
-  let targetUrl; // Variable visible también en el catch
+  let targetUrl;
 
   try {
-    // Limpia posibles duplicaciones de /api
-    const cleanPath = req.path.replace(/^\/api/, '');
-    targetUrl = `${USER_URL}/api${cleanPath}`;
+    // Construir la ruta correcta
+    let path = req.path;
+    
+    // Si la ruta empieza con /auth, agregarle /api
+    if (path.startsWith('/auth')) {
+      targetUrl = `${USER_URL}/api${path}`;
+    } 
+    // Si ya tiene /api, usarla tal cual
+    else if (path.startsWith('/api')) {
+      targetUrl = `${USER_URL}${path}`;
+    } 
+    // Si es cualquier otra, agregarle /api/users
+    else {
+      targetUrl = `${USER_URL}/api/users${path}`;
+    }
 
     console.log(`🔁 [UserRoute] ${req.method} -> ${targetUrl}`);
 
@@ -21,9 +32,9 @@ router.all('*', async (req, res) => {
       data: req.body,
       headers: {
         ...req.headers,
-        host: undefined, // evita conflictos con cabecera Host
+        host: undefined,
       },
-      validateStatus: () => true, // permite manejar todos los códigos manualmente
+      validateStatus: () => true,
     });
 
     if (response.status >= 400) {

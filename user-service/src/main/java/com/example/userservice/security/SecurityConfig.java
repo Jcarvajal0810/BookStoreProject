@@ -32,6 +32,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // ✅ TODAS las rutas de /api/auth son públicas
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/users/profile/**").permitAll() // 🆕 AGREGADO
                 .requestMatchers("/actuator/**").permitAll()
                 // 🔒 Todo lo demás requiere autenticación
                 .anyRequest().authenticated()
@@ -49,10 +50,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("*")); // ✅ Cambiado a AllowedOriginPatterns
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true); // ✅ Cambiado a true
+        configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(Arrays.asList("Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

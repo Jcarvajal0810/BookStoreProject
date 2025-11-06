@@ -20,19 +20,15 @@ export default function App() {
     cvv: '',
   });
 
-  // -----------------------
   // USER SERVICE INTEGRATION
-  // -----------------------
-  // Ahora userId es actualizable cuando el usuario haga login
   const [userId, setUserId] = useState('user-123');
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
-  // authForm usa 'username' y 'password' para coincidir con tu AuthController
   const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
 
-  // API gateway base (gateway should proxy /payment -> /api/payments)
+  // API gateway base
   const API_URL = 'http://localhost:4500';
 
   useEffect(() => {
@@ -43,48 +39,59 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Comprueba token y obtiene profile si existe
+  // ✅ Comprueba token y obtiene profile si existe
   const checkSession = async () => {
-  const t = localStorage.getItem('token');
-  if (!t) return;
+    const t = localStorage.getItem('token');
+    if (!t) return;
 
-  try {
-    // Recuperamos el usuario del localStorage
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    const username = storedUser?.username;
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (!storedUser) {
+        localStorage.removeItem('token');
+        return;
+      }
 
-    // Si no hay user en localStorage, no seguimos
-    if (!username) return;
+      const parsedUser = JSON.parse(storedUser);
+      const username = parsedUser?.username;
 
-    const res = await fetch(`${API_URL}/users/api/users/profile/${username}`, {
-      headers: { Authorization: `Bearer ${t}` },
-    });
+      if (!username) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        return;
+      }
 
-    if (!res.ok) {
-      // Token inválido o sesión expirada
+      const res = await fetch(`${API_URL}/users/profile/${username}`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+
+      if (!res.ok) {
+        // Token inválido - limpiamos silenciosamente
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setToken(null);
+        setUser(null);
+        setUserId('user-123');
+        return;
+      }
+
+      const profile = await res.json();
+      setToken(t);
+      setUser(profile);
+      setUserId(profile.id || profile._id || profile.userId || 'user-123');
+    } catch (err) {
+      console.error('checkSession error:', err);
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
       setToken(null);
       setUser(null);
-      return;
+      setUserId('user-123');
     }
+  };
 
-    const profile = await res.json();
-    setToken(t);
-    setUser(profile);
-    setUserId(profile.id || profile._id || profile.userId || 'user-123');
-  } catch (err) {
-    console.error('checkSession error:', err);
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
-  }
-};
-
-
-  // Login -> guarda token y user
+  // Login
   const handleLogin = async () => {
     try {
-      const res = await fetch(`${API_URL}/users/auth/login`, {
+      const res = await fetch(`${API_URL}/users/auth/login`, {  
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,7 +108,6 @@ export default function App() {
       }
 
       const data = await res.json();
-      // Tu AuthController devuelve { user, token }
       const tok = data.token ?? data['token'];
       const u = data.user ?? data['user'] ?? null;
 
@@ -114,20 +120,24 @@ export default function App() {
         setUserId(u.id || u._id || 'user-123');
         localStorage.setItem('user', JSON.stringify(u));
       } else {
-        // Si no vino user, al menos setear username simple
-        setUser({ username: authForm.username });
+        const tempUser = { username: authForm.username };
+        setUser(tempUser);
+        localStorage.setItem('user', JSON.stringify(tempUser));
       }
 
       setShowLogin(false);
       setAuthForm({ username: '', email: '', password: '' });
       alert(`Bienvenido, ${authForm.username}`);
+      
+      // Refrescar carrito después del login
+      await fetchCart();
     } catch (err) {
       console.error('handleLogin error:', err);
       alert('Error al iniciar sesión (conexión)');
     }
   };
 
-  // Register -> llama al endpoint register
+  // Register
   const handleRegister = async () => {
     try {
       const res = await fetch(`${API_URL}/users/auth/register`, {
@@ -146,8 +156,8 @@ export default function App() {
         alert('Error al registrarse');
         return;
       }
-      // normalmente register devuelve user + token; aquí avisamos al usuario
-      const data = await res.json().catch(() => ({}));
+
+      await res.json().catch(() => ({}));
       alert('Registro exitoso. Ahora puedes iniciar sesión.');
       setShowRegister(false);
       setShowLogin(true);
@@ -167,9 +177,7 @@ export default function App() {
     alert('Sesión cerrada');
   };
 
-  // -----------------------
-  // ORIGINAL FUNCTIONS (preservadas y sin cambios lógicos)
-  // -----------------------
+  // ORIGINAL FUNCTIONS
   const fetchBooks = async () => {
     try {
       setLoading(true);
@@ -311,6 +319,7 @@ export default function App() {
 
       if (response.ok) {
         await fetchCart();
+        await fetchInventory();
       } else {
         console.error('Error removing item', response.status);
       }
@@ -329,6 +338,7 @@ export default function App() {
 
       if (response.ok) {
         await fetchCart();
+        await fetchInventory();
       } else {
         console.error('Error clearing cart', response.status);
       }
@@ -337,7 +347,7 @@ export default function App() {
     }
   };
 
-  // processOrder: create orders, then create payment and open modal
+  // ✅ Proceso de orden mejorado
   const processOrder = async () => {
     if (cart.length === 0) {
       alert('El carrito está vacío');
@@ -347,43 +357,50 @@ export default function App() {
     if (!confirm('¿Confirmar pedido?')) return;
 
     try {
-      // create an order batch id (used to link payment)
-      const orderBatchId = `ORDER-${Date.now()}`;
+      console.log('📦 Creando orden desde carrito...');
 
-      // create orders for each item
-      const orderPromises = cart.map(item =>
-        fetch(`${API_URL}/order/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: userId,
-            book_id: item.book_id,
-            quantity: item.quantity,
-            price: item.price,
-            orderBatchId: orderBatchId, // optional for grouping
-          }),
-        })
-      );
+      const orderRes = await fetch(`${API_URL}/order`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ userId: userId })
+      });
 
-      await Promise.all(orderPromises);
-
-      // create payment in payment-service and open modal
-      const totalAmount = getCartTotal();
-
-      const created = await createPaymentAndOpenModal(orderBatchId, totalAmount);
-      if (!created) {
-        alert('No se pudo crear la referencia de pago.');
-      } else {
-        // show cart so user can click pay (modal opens automatically)
-        setShowCart(true);
+      if (!orderRes.ok) {
+        const errorText = await orderRes.text().catch(() => 'Error desconocido');
+        console.error('❌ Error creando orden:', orderRes.status, errorText);
+        alert('Error al crear la orden: ' + errorText);
+        return;
       }
+
+      const orderData = await orderRes.json();
+      console.log('✅ Orden creada:', orderData);
+
+      // Si la orden ya incluye el pago procesado
+      if (orderData.success && orderData.transaction_id) {
+        alert(`🎉 Orden completada!\nID: ${orderData.order_id}\nTotal: $${orderData.total.toLocaleString()}`);
+        await clearCart(true);
+        setShowCart(false);
+        return;
+      }
+
+      // Crear referencia de pago manualmente
+      const totalAmount = getCartTotal();
+      const created = await createPaymentAndOpenModal(orderData.order_id || `ORDER-${Date.now()}`, totalAmount);
+      
+      if (!created) {
+        alert('Orden creada pero no se pudo iniciar el pago.');
+      }
+
     } catch (err) {
-      console.error('Error en processOrder:', err);
-      alert('Error al procesar el pedido');
+      console.error('❌ Error en processOrder:', err);
+      alert('Error al procesar el pedido: ' + err.message);
     }
   };
 
-  // Create payment via API gateway, then open payment modal
+  // Crear pago vía API gateway
   const createPaymentAndOpenModal = async (orderId, amount) => {
     try {
       const res = await fetch(`${API_URL}/payment/create`, {
@@ -395,7 +412,7 @@ export default function App() {
           amount: amount,
           currency: 'COP',
           description: `Pago por pedido ${orderId}`,
-          buyerEmail: 'testbuyer@example.com',
+          buyerEmail: user?.email || 'testbuyer@example.com',
           paymentMethod: 'credit_card',
         }),
       });
@@ -421,63 +438,107 @@ export default function App() {
     }
   };
 
-  // Process payment by calling /payment/{reference}/process with card data
+  //  Procesar pago con manejo completo de errores
   const processPayment = async () => {
-    if (!paymentRef) {
-      alert('Referencia de pago no encontrada');
+  if (!paymentRef) {
+    alert('Referencia de pago no encontrada');
+    return;
+  }
+
+  if (!cardData.cardNumber || !cardData.cardHolder) {
+    alert('Ingrese los datos de la tarjeta');
+    return;
+  }
+
+  setProcessingPayment(true);
+
+  try {
+    const res = await fetch(`${API_URL}/payment/${paymentRef}/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardNumber: cardData.cardNumber,
+        cardHolder: cardData.cardHolder,
+        expiryDate: cardData.expiryDate,
+        cvv: cardData.cvv,
+      }),
+    });
+
+    //  Verificar el Content-Type de la respuesta
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error('Respuesta no es JSON:', contentType);
+      const textResponse = await res.text();
+      console.error('Contenido recibido:', textResponse);
+      alert('Error del servidor: respuesta inválida');
+      setProcessingPayment(false);
       return;
     }
 
-    if (!cardData.cardNumber || !cardData.cardHolder) {
-      alert('Ingrese los datos de la tarjeta');
-      return;
-    }
-
-    setProcessingPayment(true);
-
+    //  Parsear JSON
+    let result;
     try {
-      const res = await fetch(`${API_URL}/payment/${paymentRef}/process`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cardNumber: cardData.cardNumber,
-          cardHolder: cardData.cardHolder,
-          expiryDate: cardData.expiryDate,
-          cvv: cardData.cvv,
-        }),
-      });
+      result = await res.json();
+    } catch (parseErr) {
+      console.error('Error parsing JSON:', parseErr);
+      alert('Error al procesar la respuesta del servidor');
+      setProcessingPayment(false);
+      return;
+    }
 
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        console.error('process payment failed', res.status, body);
-        alert('Error al procesar el pago');
-        setProcessingPayment(false);
-        return;
-      }
-
-      const result = await res.json();
-      const status = result.status || result.Status || result.Status;
-
-      if (status === 'APPROVED') {
-        alert('✅ Pago aprobado: ' + (result.responseMessage || result.ResponseMessage || 'Aprobado'));
-        // Clear cart after successful payment
+    //  Caso 1: Error 400 con "already processed"
+    if (!res.ok && result.error === 'already processed') {
+      const paymentStatus = result.status || result.payment?.status || result.payment?.Status;
+      
+      if (paymentStatus === 'APPROVED') {
+        alert(' Este pago ya fue aprobado anteriormente');
         await clearCart(true);
         setShowPaymentModal(false);
         setPaymentRef(null);
         setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
         setShowCart(false);
-      } else if (status === 'DECLINED') {
-        alert('❌ Pago rechazado: ' + (result.responseMessage || result.ResponseMessage || 'Rechazado'));
+      } else if (paymentStatus === 'DECLINED') {
+        alert(' Este pago ya fue rechazado anteriormente');
       } else {
-        alert('⚠️ Pago con error: ' + (result.responseMessage || result.ResponseMessage || 'Error'));
+        alert(` Este pago ya fue procesado con estado: ${paymentStatus}`);
       }
-    } catch (err) {
-      console.error('Error processing payment:', err);
-      alert('Error procesando pago (conexión)');
-    } finally {
       setProcessingPayment(false);
+      return;
     }
-  };
+
+    //  Caso 2: Otro error HTTP
+    if (!res.ok) {
+      console.error('Payment failed:', res.status, result);
+      const errorMsg = result.error || result.message || result.responseMessage || 'Error desconocido';
+      alert('Error al procesar el pago: ' + errorMsg);
+      setProcessingPayment(false);
+      return;
+    }
+
+    //  Caso 3: Pago procesado exitosamente
+    const status = result.status || result.Status;
+    const responseMsg = result.responseMessage || result.ResponseMessage || '';
+
+    if (status === 'APPROVED') {
+      alert(' Pago aprobado: ' + (responseMsg || 'Aprobado'));
+      await clearCart(true);
+      setShowPaymentModal(false);
+      setPaymentRef(null);
+      setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
+      setShowCart(false);
+    } else if (status === 'DECLINED') {
+      alert(' Pago rechazado: ' + (responseMsg || 'Rechazado'));
+    } else {
+      alert(' Pago con estado: ' + status + '\n' + responseMsg);
+    }
+
+  } catch (err) {
+    console.error('Error processing payment:', err);
+    alert('Error procesando pago (conexión): ' + err.message);
+  } finally {
+    setProcessingPayment(false);
+  }
+};
 
   const getCartTotal = () => {
     return cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
@@ -487,7 +548,6 @@ export default function App() {
     return cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   };
 
-  // Helper to avoid duplicate keys warning: use index fallback
   const keyFor = (id, i) => (id ? `${id}-${i}` : `item-${i}`);
 
   return (
@@ -497,7 +557,6 @@ export default function App() {
           <h1 className="text-3xl font-bold">📚 Librería Telemática</h1>
 
           <div className="flex items-center gap-3">
-            {/* User UI */}
             {user ? (
               <>
                 <span className="text-sm font-medium">👋 {user.username || user.email || 'Usuario'}</span>
@@ -747,14 +806,17 @@ export default function App() {
                   Cancelar
                 </button>
 
-                <button onClick={async () => {
-                  // If no paymentRef yet, create it first
-                  if (!paymentRef) {
-                    const created = await createPaymentAndOpenModal(`ORDER-TMP-${Date.now()}`, getCartTotal());
-                    if (!created) return;
-                  }
-                  await processPayment();
-                }} disabled={processingPayment} className="flex-1 px-4 py-2 text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:bg-gray-300">
+                <button 
+                  onClick={async () => {
+                    if (!paymentRef) {
+                      const created = await createPaymentAndOpenModal(`ORDER-TMP-${Date.now()}`, getCartTotal());
+                      if (!created) return;
+                    }
+                    await processPayment();
+                  }} 
+                  disabled={processingPayment} 
+                  className="flex-1 px-4 py-2 text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:bg- gray-300 disabled:cursor-not-allowed"
+                >
                   {processingPayment ? 'Procesando...' : 'Pagar ahora'}
                 </button>
               </div>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -29,7 +30,6 @@ type PayUResponse struct {
 }
 
 // ------------------- RESPUESTA SIMPLIFICADA -------------------
-// Estructura que retorna SimulatePayment para el handler
 type SimulatedPaymentResponse struct {
 	Status          string
 	ResponseCode    string
@@ -38,7 +38,6 @@ type SimulatedPaymentResponse struct {
 }
 
 // ------------------- DETECCIÓN DEL TIPO DE TARJETA -------------------
-// Detecta VISA, MASTERCARD, AMEX, DINERS, DISCOVER, etc.
 func detectCardType(cardNumber string) string {
 	cardNumber = strings.ReplaceAll(cardNumber, " ", "")
 
@@ -60,19 +59,49 @@ func detectCardType(cardNumber string) string {
 	return "UNKNOWN"
 }
 
-// ------------------- SIMULAR PAGO (VERSIÓN SIMPLIFICADA) -------------------
-// SimulatePayment procesa un pago usando los datos de la tarjeta
-// Orden de parámetros: cardNumber, cardHolder, expiryDate, cvv, amount
+// ------------------- CONVERTIR FECHA MM/YY a YYYY/MM -------------------
+func convertExpiryDate(expiryDate string) string {
+	// Si ya viene en formato YYYY/MM, devolverla tal cual
+	if len(expiryDate) == 7 && strings.Count(expiryDate, "/") == 1 {
+		parts := strings.Split(expiryDate, "/")
+		if len(parts[0]) == 4 {
+			return expiryDate
+		}
+	}
+
+	// Convertir de MM/YY a YYYY/MM
+	expiryDate = strings.ReplaceAll(expiryDate, " ", "")
+	parts := strings.Split(expiryDate, "/")
+	
+	if len(parts) != 2 {
+		// Formato inválido, devolver fecha por defecto
+		return "2025/12"
+	}
+
+	month := parts[0]
+	year := parts[1]
+
+	// Asegurar que el mes tenga 2 dígitos
+	if len(month) == 1 {
+		month = "0" + month
+	}
+
+	// Si el año tiene 2 dígitos, convertir a 4
+	if len(year) == 2 {
+		year = "20" + year
+	}
+
+	return fmt.Sprintf("%s/%s", year, month)
+}
+
+// ------------------- SIMULAR PAGO -------------------
 func SimulatePayment(cardNumber, cardHolder, expiryDate, cvv string, amount float64) SimulatedPaymentResponse {
-	// Generar referencia única
 	reference := fmt.Sprintf("REF-%d", time.Now().UnixNano())
 	description := "Pago simulado"
 	currency := "COP"
 
-	// Llamar a la función completa de PayU
 	payuResp, err := ProcessPaymentPayU(reference, description, amount, currency, cardNumber, cardHolder, expiryDate, cvv)
 	
-	// Si hay error, retornar pago rechazado
 	if err != nil {
 		return SimulatedPaymentResponse{
 			Status:          "REJECTED",
@@ -82,7 +111,6 @@ func SimulatePayment(cardNumber, cardHolder, expiryDate, cvv string, amount floa
 		}
 	}
 
-	// Mapear el estado de PayU a nuestro formato
 	status := "REJECTED"
 	if payuResp.TransactionResponse.State == "APPROVED" {
 		status = "APPROVED"
@@ -99,8 +127,15 @@ func SimulatePayment(cardNumber, cardHolder, expiryDate, cvv string, amount floa
 }
 
 // ------------------- PROCESAR PAGO -------------------
-
 func ProcessPaymentPayU(reference, description string, amount float64, currency, cardNumber, cardHolder, expiryDate, cvv string) (*PayUResponse, error) {
+	// 🔹 Limpiar número de tarjeta
+	cardNumber = strings.ReplaceAll(cardNumber, " ", "")
+	cardNumber = strings.ReplaceAll(cardNumber, "-", "")
+	
+	// 🔹 Convertir fecha de expiración
+	expiryDate = convertExpiryDate(expiryDate)
+	
+	// 🔹 Detectar tipo de tarjeta
 	cardType := detectCardType(cardNumber)
 
 	reqBody := map[string]interface{}{
@@ -130,7 +165,7 @@ func ProcessPaymentPayU(reference, description string, amount float64, currency,
 			"creditCard": map[string]string{
 				"number":         cardNumber,
 				"securityCode":   cvv,
-				"expirationDate": expiryDate, // formato: YYYY/MM
+				"expirationDate": expiryDate,
 				"name":           cardHolder,
 			},
 			"type":            "AUTHORIZATION_AND_CAPTURE",
@@ -138,10 +173,14 @@ func ProcessPaymentPayU(reference, description string, amount float64, currency,
 			"paymentCountry":  "CO",
 			"deviceSessionId": fmt.Sprintf("SIM-%d", time.Now().UnixNano()),
 		},
-		"test": true, // 🔹 esto activa el modo simulación (sandbox)
+		"test": true,
 	}
 
 	body, _ := json.Marshal(reqBody)
+
+	// 🔹 Loggear el request que se envía a PayU
+	fmt.Println(" REQUEST A PAYU:")
+	fmt.Println(string(body))
 
 	client := http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Post(sandboxURL, "application/json", bytes.NewBuffer(body))
@@ -150,9 +189,25 @@ func ProcessPaymentPayU(reference, description string, amount float64, currency,
 	}
 	defer resp.Body.Close()
 
-	var payuResp PayUResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payuResp); err != nil {
+	// 🔹 Leer la respuesta CRUDA primero
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, fmt.Errorf("error al leer respuesta de PayU: %v", err)
+	}
+
+	// 🔹 Loggear la respuesta cruda
+	fmt.Println(" RESPUESTA CRUDA DE PAYU:")
+	fmt.Println(string(bodyBytes))
+
+	// 🔹 Verificar si es HTML (error)
+	if strings.HasPrefix(string(bodyBytes), "<") {
+		return nil, fmt.Errorf("error al leer respuesta de PayU: invalid character '<' looking for beginning of value")
+	}
+
+	// 🔹 Parsear JSON
+	var payuResp PayUResponse
+	if err := json.Unmarshal(bodyBytes, &payuResp); err != nil {
+		return nil, fmt.Errorf("error al parsear respuesta de PayU: %v", err)
 	}
 
 	return &payuResp, nil

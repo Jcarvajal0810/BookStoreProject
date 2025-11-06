@@ -11,7 +11,6 @@ com\example\userservice\security\JwtAuthenticationFilter.class
 com\example\userservice\grpc\ValidateUserResponse$Builder.class
 com\example\userservice\model\User.class
 com\example\userservice\grpc\UserServiceGrpc$2.class
-com\example\userservice\controller\UserController.class
 com\example\userservice\grpc\UserServiceGrpc$UserServiceFutureStub.class
 com\example\userservice\service\UserService.class
 com\example\userservice\grpc\ValidateUserResponse.class

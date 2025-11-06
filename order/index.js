@@ -56,6 +56,12 @@ const Order = mongoose.model('Order', orderSchema);
 const inventoryClient = new InventoryClient();
 const cartClient = new CartClient();
 
+// ====== MIDDLEWARE DE LOGS ======
+app.use((req, res, next) => {
+  console.log(`[Order Service] ${req.method} ${req.path}`);
+  next();
+});
+
 // ====== ENDPOINTS REST ======
 
 app.get('/api/orders', async (req, res) => {
@@ -78,7 +84,16 @@ app.get('/api/orders/user/:userId', async (req, res) => {
   res.json(orders);
 });
 
-// ====== NUEVO ENDPOINT: CREAR ORDEN DESDE CARRITO ======
+//  NUEVO: Ruta corta /order (redirige a /api/orders/from-cart)
+app.post('/order', async (req, res) => {
+  console.log('[Order Service] Recibido POST /order, redirigiendo internamente...');
+  
+  // Redirigir internamente a /api/orders/from-cart
+  req.url = '/api/orders/from-cart';
+  return app.handle(req, res);
+});
+
+// ====== CREAR ORDEN DESDE CARRITO ======
 app.post('/api/orders/from-cart', async (req, res) => {
   const { userId } = req.body;
 
@@ -87,7 +102,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
   }
 
   console.log(`\n${'='.repeat(60)}`);
-  console.log(` INICIANDO FLUJO DE ORDEN PARA userId: ${userId}`);
+  console.log(`🛒 INICIANDO FLUJO DE ORDEN PARA userId: ${userId}`);
   console.log('='.repeat(60));
 
   try {
@@ -115,7 +130,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
           message: `Stock insuficiente para libro: ${item.title}`
         });
       }
-      console.log(`   ✓ ${item.title}: ${stockResp.available_units} disponibles`);
+      console.log(`    ${item.title}: ${stockResp.available_units} disponibles`);
     }
     console.log(' Stock validado para todos los items');
 
@@ -155,13 +170,22 @@ app.post('/api/orders/from-cart', async (req, res) => {
     console.log(` Orden creada con ID: ${savedOrder._id}`);
 
     // ===== PASO 5: Procesar pago vía Payment Service =====
-    console.log('\n [5/7] Procesando pago (gRPC)...');
-    const paymentResp = await processPayment(
-      savedOrder._id.toString(),
-      savedOrder.userId,
-      savedOrder.total,
-      "card"
-    );
+   // ===== PASO 5: NO procesar pago aún (esperar frontend) =====
+console.log('\n [5/7] Orden creada, esperando pago del frontend...');
+
+// NO llamar a processPayment aquí
+// El pago se procesará cuando el usuario haga click en "Pagar" en el frontend
+
+// Responder con la orden creada pero SIN payment_transaction_id
+res.status(201).json({
+  success: true,
+  order_id: savedOrder._id,
+  total: savedOrder.total,
+  items_count: savedOrder.items.length,
+  message: 'Orden creada exitosamente. Por favor procede al pago.'
+});
+
+return; //  IMPORTANTE: Salir aquí para no continuar con el flujo
 
     if (!paymentResp.success) {
       console.error(' Pago fallido:', paymentResp.message);
@@ -199,7 +223,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
     });
 
     console.log(`\n${'='.repeat(60)}`);
-    console.log(` ORDEN COMPLETADA EXITOSAMENTE - ID: ${savedOrder._id}`);
+    console.log(`🎉 ORDEN COMPLETADA EXITOSAMENTE - ID: ${savedOrder._id}`);
     console.log(`${'='.repeat(60)}\n`);
 
     res.status(201).json({
@@ -212,7 +236,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('\n ERROR EN FLUJO DE ORDEN:', err);
+    console.error('\n❌ ERROR EN FLUJO DE ORDEN:', err);
     res.status(500).json({ message: 'Error procesando orden: ' + err.message });
   }
 });
@@ -291,12 +315,18 @@ app.delete('/api/orders/:id', async (req, res) => {
   }
 });
 
-// ====== INICIAR SERVIDOR ======
+// ====== INICIAR SERVIDOR gRPC (en paralelo al REST) ======
+import('./grpc/orderServer.js').catch(err => {
+  console.error(' No se pudo iniciar gRPC server:', err.message);
+});
+
+// ====== INICIAR SERVIDOR REST ======
 app.listen(PORT, () => {
   console.log(`\n${'='.repeat(60)}`);
   console.log(` Order Service iniciado`);
   console.log(`${'='.repeat(60)}`);
   console.log(` REST API: http://localhost:${PORT}`);
+  console.log(` gRPC Server: localhost:${process.env.GRPC_PORT || 50056}`);
   console.log(` Inventory gRPC: ${process.env.INVENTORY_GRPC_URL || 'localhost:50051'}`);
   console.log(` Payment gRPC: ${process.env.PAYMENT_GRPC_URL || 'localhost:50052'}`);
   console.log(` Cart gRPC: ${process.env.CART_GRPC_URL || 'localhost:50053'}`);
