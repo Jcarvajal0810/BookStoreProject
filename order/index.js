@@ -27,7 +27,7 @@ mongoose
   });
 
 // ====== MODELO DE ORDEN ======
-const VALID_STATUSES = ['CREATED', 'PAID', 'SHIPPED', 'DELIVERED'];
+const VALID_STATUSES = ['CREATED', 'PAID', 'SHIPPED', 'DELIVERED', 'PAYMENT_FAILED'];
 
 const orderSchema = new mongoose.Schema(
   {
@@ -102,7 +102,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
   }
 
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`🛒 INICIANDO FLUJO DE ORDEN PARA userId: ${userId}`);
+  console.log(` INICIANDO FLUJO DE ORDEN PARA userId: ${userId}`);
   console.log('='.repeat(60));
 
   try {
@@ -111,7 +111,7 @@ app.post('/api/orders/from-cart', async (req, res) => {
     const cartData = await cartClient.getCartItems(userId);
 
     if (!cartData.items || cartData.items.length === 0) {
-      console.log('  Carrito vacío');
+      console.log(' Carrito vacío');
       return res.status(400).json({ message: 'El carrito está vacío' });
     }
 
@@ -149,7 +149,14 @@ app.post('/api/orders/from-cart', async (req, res) => {
       console.log(' Stock reservado exitosamente');
     } catch (err) {
       console.error(' Error en reserva de stock:', err.message);
-      // TODO: Revertir reservas parciales
+      // Revertir reservas parciales
+      for (const bookId of reservedItems) {
+        try {
+          await inventoryClient.releaseStock(bookId, 1);
+        } catch (releaseErr) {
+          console.error(`Error liberando stock de ${bookId}:`, releaseErr.message);
+        }
+      }
       return res.status(400).json({ message: err.message });
     }
 
@@ -169,75 +176,110 @@ app.post('/api/orders/from-cart', async (req, res) => {
     const savedOrder = await newOrder.save();
     console.log(` Orden creada con ID: ${savedOrder._id}`);
 
-    // ===== PASO 5: Procesar pago vía Payment Service =====
-   // ===== PASO 5: NO procesar pago aún (esperar frontend) =====
-console.log('\n [5/7] Orden creada, esperando pago del frontend...');
-
-// NO llamar a processPayment aquí
-// El pago se procesará cuando el usuario haga click en "Pagar" en el frontend
-
-// Responder con la orden creada pero SIN payment_transaction_id
-res.status(201).json({
-  success: true,
-  order_id: savedOrder._id,
-  total: savedOrder.total,
-  items_count: savedOrder.items.length,
-  message: 'Orden creada exitosamente. Por favor procede al pago.'
-});
-
-return; //  IMPORTANTE: Salir aquí para no continuar con el flujo
-
-    if (!paymentResp.success) {
-      console.error(' Pago fallido:', paymentResp.message);
-      console.log(' Revirtiendo orden...');
-      await Order.findByIdAndDelete(savedOrder._id);
-      // TODO: Revertir reservas de stock
-      return res.status(400).json({
-        message: 'Pago fallido: ' + paymentResp.message
-      });
-    }
-
-    console.log(` Pago exitoso - Transaction ID: ${paymentResp.transaction_id}`);
-
-    // ===== PASO 6: Confirmar reducción de stock =====
-    console.log('\n  [6/7] Confirmando reducción de stock (gRPC)...');
-    for (const item of cartData.items) {
-      await inventoryClient.confirmStock(item.book_id, item.quantity);
-      console.log(`   ✓ Stock confirmado: ${item.title}`);
-    }
-    console.log(' Stock reducido permanentemente');
-
-    // ===== PASO 7: Vaciar el carrito =====
-    console.log('\n [7/7] Vaciando carrito (gRPC)...');
-    const clearResp = await cartClient.clearCart(userId);
-    if (clearResp.success) {
-      console.log(' Carrito vaciado exitosamente');
-    } else {
-      console.warn('  No se pudo vaciar el carrito:', clearResp.message);
-    }
-
-    // ===== ACTUALIZAR ESTADO DE ORDEN =====
-    await Order.findByIdAndUpdate(savedOrder._id, {
-      status: 'PAID',
-      payment_transaction_id: paymentResp.transaction_id
-    });
+    // ===== PASO 5: NO procesar pago aún (esperar frontend) =====
+    console.log('\n [5/7] Orden creada, esperando pago del frontend...');
 
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`🎉 ORDEN COMPLETADA EXITOSAMENTE - ID: ${savedOrder._id}`);
+    console.log(` ORDEN CREADA - Esperando pago - ID: ${savedOrder._id}`);
     console.log(`${'='.repeat(60)}\n`);
 
+    // Responder con la orden creada pero SIN payment_transaction_id
     res.status(201).json({
       success: true,
       order_id: savedOrder._id,
       total: savedOrder.total,
       items_count: savedOrder.items.length,
-      transaction_id: paymentResp.transaction_id,
-      message: 'Orden creada y pago procesado exitosamente'
+      message: 'Orden creada exitosamente. Por favor procede al pago.'
     });
 
   } catch (err) {
-    console.error('\n❌ ERROR EN FLUJO DE ORDEN:', err);
+    console.error('\n ERROR EN FLUJO DE ORDEN:', err);
     res.status(500).json({ message: 'Error procesando orden: ' + err.message });
+  }
+});
+
+//  Endpoint para recibir resultado del pago desde el frontend
+app.post('/api/orders/:orderId/payment-result', async (req, res) => {
+  const { orderId } = req.params;
+  const { status, transactionId, message } = req.body;
+
+  console.log(`\n Recibido resultado de pago para orden ${orderId}`);
+  console.log(`   Status: ${status}`);
+  console.log(`   Transaction ID: ${transactionId || 'N/A'}`);
+
+  try {
+    const order = await Order.findById(orderId);
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Orden no encontrada'
+      });
+    }
+
+    if (status === 'APPROVED') {
+      console.log('\n [6/7] Pago aprobado - Confirmando stock...');
+      
+      // Confirmar reducción de stock
+      for (const item of order.items) {
+        await inventoryClient.confirmStock(item.book_id, item.quantity);
+        console.log(`    Stock confirmado: ${item.title}`);
+      }
+
+      // Vaciar carrito
+      console.log('\n [7/7] Vaciando carrito...');
+      await cartClient.clearCart(order.userId);
+
+      // Actualizar orden
+      await Order.findByIdAndUpdate(orderId, {
+        status: 'PAID',
+        payment_transaction_id: transactionId
+      });
+
+      console.log(`\n ORDEN COMPLETADA: ${orderId}\n`);
+
+      return res.json({
+        success: true,
+        message: 'Pago procesado y orden completada'
+      });
+
+    } else if (status === 'REJECTED' || status === 'DECLINED') {
+      console.log('\n Pago rechazado - Liberando stock...');
+      
+      // Liberar stock reservado
+      for (const item of order.items) {
+        await inventoryClient.releaseStock(item.book_id, item.quantity);
+        console.log(`   ↩ Stock liberado: ${item.title} (${item.quantity} unidades)`);
+      }
+
+      // Actualizar estado de orden
+      await Order.findByIdAndUpdate(orderId, {
+        status: 'PAYMENT_FAILED'
+      });
+
+      console.log(`\n ORDEN CANCELADA: ${orderId}\n`);
+
+      return res.json({
+        success: false,
+        message: 'Pago rechazado, stock liberado'
+      });
+
+    } else {
+      // Estado desconocido o pendiente
+      console.log(`\n Pago en estado: ${status}`);
+      
+      return res.json({
+        success: false,
+        message: `Pago en estado: ${status}`
+      });
+    }
+
+  } catch (err) {
+    console.error(' Error procesando resultado de pago:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Error procesando resultado: ' + err.message
+    });
   }
 });
 

@@ -39,103 +39,125 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Comprueba token y obtiene profile si existe
-  const checkSession = async () => {
-    const t = localStorage.getItem('token');
-    if (!t) return;
+  //  Comprueba token y obtiene profile si existe
+  //  Comprueba token y obtiene profile si existe
+const checkSession = async () => {
+  const t = localStorage.getItem('token');
+  if (!t) return;
 
-    try {
-      const storedUser = localStorage.getItem('user');
-      if (!storedUser) {
-        localStorage.removeItem('token');
-        return;
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      localStorage.removeItem('token');
+      return;
+    }
+
+    const parsedUser = JSON.parse(storedUser);
+    const username = parsedUser?.username;
+
+    if (!username) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      return;
+    }
+
+    //  Codificar el username correctamente para la URL
+    const encodedUsername = encodeURIComponent(username);
+    
+    console.log(` Validando sesión para usuario: ${username}`);
+
+    const res = await fetch(`${API_URL}/users/profile/${encodedUsername}`, {
+      headers: { 
+        'Authorization': `Bearer ${t}`,
+        'Accept': 'application/json'
+      },
+    });
+
+    if (!res.ok) {
+      console.warn(` Error ${res.status} al validar sesión para ${username}`);
+      
+      // Si es 404, el usuario no existe
+      if (res.status === 404) {
+        console.warn(' Usuario no existe en BD, limpiando sesión');
       }
-
-      const parsedUser = JSON.parse(storedUser);
-      const username = parsedUser?.username;
-
-      if (!username) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        return;
-      }
-
-      const res = await fetch(`${API_URL}/users/profile/${username}`, {
-        headers: { Authorization: `Bearer ${t}` },
-      });
-
-      if (!res.ok) {
-        // Token inválido - limpiamos silenciosamente
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setToken(null);
-        setUser(null);
-        setUserId('user-123');
-        return;
-      }
-
-      const profile = await res.json();
-      setToken(t);
-      setUser(profile);
-      setUserId(profile.id || profile._id || profile.userId || 'user-123');
-    } catch (err) {
-      console.error('checkSession error:', err);
+      
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       setToken(null);
       setUser(null);
       setUserId('user-123');
+      return;
     }
-  };
+
+    const profile = await res.json();
+    setToken(t);
+    setUser(profile);
+    setUserId(profile.id || profile._id || profile.userId || 'user-123');
+    
+    console.log(' Sesión restaurada:', profile.username);
+  } catch (err) {
+    console.error(' Error en checkSession:', err);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+    setUserId('user-123');
+  }
+};
 
   // Login
   const handleLogin = async () => {
-    try {
-      const res = await fetch(`${API_URL}/users/auth/login`, {  
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: authForm.username,
-          password: authForm.password,
-        }),
-      });
+  try {
+    const res = await fetch(`${API_URL}/users/auth/login`, {  
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: authForm.username,
+        password: authForm.password,
+      }),
+    });
 
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        console.error('Login failed:', res.status, txt);
-        alert('Credenciales incorrectas o error en login');
-        return;
-      }
-
-      const data = await res.json();
-      const tok = data.token ?? data['token'];
-      const u = data.user ?? data['user'] ?? null;
-
-      if (tok) {
-        localStorage.setItem('token', tok);
-        setToken(tok);
-      }
-      if (u) {
-        setUser(u);
-        setUserId(u.id || u._id || 'user-123');
-        localStorage.setItem('user', JSON.stringify(u));
-      } else {
-        const tempUser = { username: authForm.username };
-        setUser(tempUser);
-        localStorage.setItem('user', JSON.stringify(tempUser));
-      }
-
-      setShowLogin(false);
-      setAuthForm({ username: '', email: '', password: '' });
-      alert(`Bienvenido, ${authForm.username}`);
-      
-      // Refrescar carrito después del login
-      await fetchCart();
-    } catch (err) {
-      console.error('handleLogin error:', err);
-      alert('Error al iniciar sesión (conexión)');
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.error(' Login failed:', res.status, txt);
+      alert('Credenciales incorrectas o error en login');
+      return;
     }
-  };
+
+    const data = await res.json();
+    
+    //  Verificar si hay error en la respuesta
+    if (data.error) {
+      alert('Error: ' + data.error);
+      return;
+    }
+    
+    const tok = data.token;
+    const u = data.user;
+
+    if (!tok || !u) {
+      alert('Respuesta incompleta del servidor');
+      return;
+    }
+
+    localStorage.setItem('token', tok);
+    localStorage.setItem('user', JSON.stringify(u));
+    
+    setToken(tok);
+    setUser(u);
+    setUserId(u.id || u._id || 'user-123');
+
+    setShowLogin(false);
+    setAuthForm({ username: '', email: '', password: '' });
+    alert(` Bienvenido, ${u.username || authForm.username}`);
+    
+    // Refrescar carrito después del login
+    await fetchCart();
+  } catch (err) {
+    console.error(' handleLogin error:', err);
+    alert('Error al iniciar sesión (conexión)');
+  }
+};
 
   // Register
   const handleRegister = async () => {
@@ -378,27 +400,42 @@ export default function App() {
       const orderData = await orderRes.json();
       console.log('✅ Orden creada:', orderData);
 
-      // Si la orden ya incluye el pago procesado
-      if (orderData.success && orderData.transaction_id) {
-        alert(`🎉 Orden completada!\nID: ${orderData.order_id}\nTotal: $${orderData.total.toLocaleString()}`);
-        await clearCart(true);
-        setShowCart(false);
+      // Extraer el orderId de la respuesta
+      const orderId = orderData.order_id;
+      
+      if (!orderId) {
+        alert('Error: No se recibió el ID de la orden');
         return;
       }
 
-      // Crear referencia de pago manualmente
+      // Guardar orderId para usarlo después en la notificación de pago
+      localStorage.setItem('currentOrderId', orderId);
+      console.log('💾 OrderId guardado:', orderId);
+
+      // Si la orden ya incluye el pago procesado (flujo antiguo)
+      if (orderData.success && orderData.transaction_id) {
+        alert(`✅ Orden completada!\nID: ${orderId}\nTotal: $${orderData.total.toLocaleString()}`);
+        await clearCart(true);
+        setShowCart(false);
+        localStorage.removeItem('currentOrderId');
+        return;
+      }
+
+      // Crear referencia de pago y abrir modal (nuevo flujo)
       const totalAmount = getCartTotal();
-      const created = await createPaymentAndOpenModal(orderData.order_id || `ORDER-${Date.now()}`, totalAmount);
+      const created = await createPaymentAndOpenModal(orderId, totalAmount);
       
       if (!created) {
         alert('Orden creada pero no se pudo iniciar el pago.');
+        localStorage.removeItem('currentOrderId');
       }
 
-    } catch (err) {
-      console.error('❌ Error en processOrder:', err);
-      alert('Error al procesar el pedido: ' + err.message);
-    }
-  };
+  } catch (err) {
+    console.error(' Error en processOrder:', err);
+    alert('Error al procesar el pedido: ' + err.message);
+    localStorage.removeItem('currentOrderId');
+  }
+};
 
   // Crear pago vía API gateway
   const createPaymentAndOpenModal = async (orderId, amount) => {
@@ -464,7 +501,6 @@ export default function App() {
       }),
     });
 
-    //  Verificar el Content-Type de la respuesta
     const contentType = res.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
       console.error('Respuesta no es JSON:', contentType);
@@ -475,7 +511,6 @@ export default function App() {
       return;
     }
 
-    //  Parsear JSON
     let result;
     try {
       result = await res.json();
@@ -486,7 +521,7 @@ export default function App() {
       return;
     }
 
-    //  Caso 1: Error 400 con "already processed"
+    // Caso: Ya procesado
     if (!res.ok && result.error === 'already processed') {
       const paymentStatus = result.status || result.payment?.status || result.payment?.Status;
       
@@ -497,8 +532,6 @@ export default function App() {
         setPaymentRef(null);
         setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
         setShowCart(false);
-      } else if (paymentStatus === 'DECLINED') {
-        alert(' Este pago ya fue rechazado anteriormente');
       } else {
         alert(` Este pago ya fue procesado con estado: ${paymentStatus}`);
       }
@@ -506,28 +539,66 @@ export default function App() {
       return;
     }
 
-    //  Caso 2: Otro error HTTP
+    // Caso: Error HTTP
     if (!res.ok) {
       console.error('Payment failed:', res.status, result);
       const errorMsg = result.error || result.message || result.responseMessage || 'Error desconocido';
-      alert('Error al procesar el pago: ' + errorMsg);
+      alert(' Error al procesar el pago: ' + errorMsg);
       setProcessingPayment(false);
       return;
     }
 
-    //  Caso 3: Pago procesado exitosamente
+    // Caso: Pago procesado exitosamente
     const status = result.status || result.Status;
     const responseMsg = result.responseMessage || result.ResponseMessage || '';
+    const transactionId = result.transactionId || result.TransactionID || '';
 
+    console.log(' Notificando resultado al Order Service...');
+    console.log('   Status:', status);
+    console.log('   Transaction ID:', transactionId);
+
+    //  NOTIFICAR AL ORDER SERVICE
+    // Necesitamos obtener el orderId que guardamos al crear la orden
+    const orderId = localStorage.getItem('currentOrderId');
+    
+    if (orderId) {
+      try {
+        await fetch(`${API_URL}/orders/${orderId}/payment-result`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            status: status,
+            transactionId: transactionId,
+            message: responseMsg
+          })
+        });
+        
+        // Limpiar el orderId guardado
+        localStorage.removeItem('currentOrderId');
+        
+        console.log(' Order Service notificado del resultado del pago');
+      } catch (notifyErr) {
+        console.error(' Error notificando al Order Service:', notifyErr);
+        // No bloqueamos el flujo si falla la notificación
+      }
+    }
+
+    // Actualizar UI según el estado
     if (status === 'APPROVED') {
-      alert(' Pago aprobado: ' + (responseMsg || 'Aprobado'));
+      alert(' Pago aprobado: ' + (responseMsg || 'Transacción exitosa'));
       await clearCart(true);
       setShowPaymentModal(false);
       setPaymentRef(null);
       setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
       setShowCart(false);
-    } else if (status === 'DECLINED') {
-      alert(' Pago rechazado: ' + (responseMsg || 'Rechazado'));
+      
+      // Refrescar inventario
+      await fetchInventory();
+    } else if (status === 'DECLINED' || status === 'REJECTED') {
+      alert(' Pago rechazado: ' + (responseMsg || 'Transacción declinada'));
     } else {
       alert(' Pago con estado: ' + status + '\n' + responseMsg);
     }

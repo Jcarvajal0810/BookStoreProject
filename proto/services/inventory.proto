@@ -6,6 +6,7 @@ service InventoryService {
   rpc CheckStock (StockRequest) returns (StockResponse);
   rpc ReserveStock (ReserveRequest) returns (ReserveResponse);
   rpc ConfirmStockReduction (ConfirmRequest) returns (ConfirmResponse);
+  rpc ReleaseStock (ReleaseRequest) returns (ReleaseResponse);  // 🆕 NUEVO
 }
 
 message StockRequest {
@@ -35,5 +36,15 @@ message ConfirmRequest {
 
 message ConfirmResponse {
   bool confirmed = 1;
+  string message = 2;
+}
+
+message ReleaseRequest {
+  string book_id = 1;
+  int32 quantity = 2;
+}
+
+message ReleaseResponse {
+  bool success = 1;
   string message = 2;
 }

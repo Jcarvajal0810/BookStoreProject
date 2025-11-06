@@ -24,23 +24,25 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                // ✅ TODAS las rutas de /api/auth son públicas
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/users/profile/**").permitAll() // 🆕 AGREGADO
-                .requestMatchers("/actuator/**").permitAll()
-                // 🔒 Todo lo demás requiere autenticación
-                .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())
+        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(auth -> auth
+            //  Rutas públicas
+            .requestMatchers("/api/auth/**").permitAll()
+            .requestMatchers("/api/users/profile/**").permitAll()
+            .requestMatchers("/api/users/tasks/**").permitAll() //  Para scheduler
+            .requestMatchers("/actuator/**").permitAll()
+            .requestMatchers("/grpc/**").permitAll() //  Para gRPC
+            //  Todo lo demás requiere autenticación
+            .anyRequest().authenticated()
+        )
+        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        return http.build();
-    }
+    return http.build();
+}
 
     @Bean
     public PasswordEncoder passwordEncoder() {

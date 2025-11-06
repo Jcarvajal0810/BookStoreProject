@@ -2,6 +2,7 @@ package payu
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,25 +12,64 @@ import (
 	"time"
 )
 
-// URL del entorno de pruebas (sandbox)
-const sandboxURL = "https://sandbox.api.payulatam.com/payments-api/4.0/service.cgi"
+func generateSignature(referenceCode string, amount float64, currency string) string {
+	apiKey := os.Getenv("PAYU_API_KEY")
+	merchantId := os.Getenv("PAYU_MERCHANT_ID")
 
-// ------------------- RESPUESTA -------------------
+	// PayU requiere el monto SIN decimales para COP o con 2 decimales para otras monedas
+	var amountStr string
+	if currency == "COP" {
+		// Para COP, PayU espera el valor sin decimales
+		amountStr = fmt.Sprintf("%.0f", amount)
+	} else {
+		amountStr = fmt.Sprintf("%.2f", amount)
+	}
+	
+	// Formato: ApiKey~merchantId~referenceCode~amount~currency
+	data := fmt.Sprintf("%s~%s~%s~%s~%s", 
+		apiKey, 
+		merchantId, 
+		referenceCode, 
+		amountStr, 
+		currency,
+	)
+	
+	fmt.Printf("🔐 Generando firma con: %s\n", data)
+	hash := md5.Sum([]byte(data))
+	signature := fmt.Sprintf("%x", hash)
+	fmt.Printf("✅ Firma generada: %s\n", signature)
+	return signature
+}
+
+const sandboxURL = "https://sandbox.api.payulatam.com/payments-api/4.0/service.cgi"
 
 type PayUResponse struct {
 	Code                string `json:"code"`
 	Error               string `json:"error"`
 	TransactionResponse struct {
-		OrderID        string `json:"orderId"`
-		TransactionID  string `json:"transactionId"`
-		State          string `json:"state"`
-		PaymentNetwork string `json:"paymentNetwork"`
-		ResponseCode   string `json:"responseCode"`
-		ResponseMsg    string `json:"responseMessage"`
+		OrderID        interface{} `json:"orderId"`       
+		TransactionID  string      `json:"transactionId"`
+		State          string      `json:"state"`
+		PaymentNetwork string      `json:"paymentNetworkResponseCode"`
+		ResponseCode   string      `json:"responseCode"`
+		ResponseMsg    string      `json:"responseMessage"`
 	} `json:"transactionResponse"`
 }
 
-// ------------------- RESPUESTA SIMPLIFICADA -------------------
+// Función helper para obtener OrderID como string
+func (r *PayUResponse) GetOrderID() string {
+	switch v := r.TransactionResponse.OrderID.(type) {
+	case string:
+		return v
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	default:
+		return ""
+	}
+}
+
 type SimulatedPaymentResponse struct {
 	Status          string
 	ResponseCode    string
@@ -37,9 +77,9 @@ type SimulatedPaymentResponse struct {
 	TransactionID   string
 }
 
-// ------------------- DETECCIÓN DEL TIPO DE TARJETA -------------------
 func detectCardType(cardNumber string) string {
 	cardNumber = strings.ReplaceAll(cardNumber, " ", "")
+	cardNumber = strings.ReplaceAll(cardNumber, "-", "")
 
 	if strings.HasPrefix(cardNumber, "4") {
 		return "VISA"
@@ -59,9 +99,7 @@ func detectCardType(cardNumber string) string {
 	return "UNKNOWN"
 }
 
-// ------------------- CONVERTIR FECHA MM/YY a YYYY/MM -------------------
 func convertExpiryDate(expiryDate string) string {
-	// Si ya viene en formato YYYY/MM, devolverla tal cual
 	if len(expiryDate) == 7 && strings.Count(expiryDate, "/") == 1 {
 		parts := strings.Split(expiryDate, "/")
 		if len(parts[0]) == 4 {
@@ -69,24 +107,20 @@ func convertExpiryDate(expiryDate string) string {
 		}
 	}
 
-	// Convertir de MM/YY a YYYY/MM
 	expiryDate = strings.ReplaceAll(expiryDate, " ", "")
 	parts := strings.Split(expiryDate, "/")
 	
 	if len(parts) != 2 {
-		// Formato inválido, devolver fecha por defecto
 		return "2025/12"
 	}
 
 	month := parts[0]
 	year := parts[1]
 
-	// Asegurar que el mes tenga 2 dígitos
 	if len(month) == 1 {
 		month = "0" + month
 	}
 
-	// Si el año tiene 2 dígitos, convertir a 4
 	if len(year) == 2 {
 		year = "20" + year
 	}
@@ -94,7 +128,6 @@ func convertExpiryDate(expiryDate string) string {
 	return fmt.Sprintf("%s/%s", year, month)
 }
 
-// ------------------- SIMULAR PAGO -------------------
 func SimulatePayment(cardNumber, cardHolder, expiryDate, cvv string, amount float64) SimulatedPaymentResponse {
 	reference := fmt.Sprintf("REF-%d", time.Now().UnixNano())
 	description := "Pago simulado"
@@ -126,88 +159,144 @@ func SimulatePayment(cardNumber, cardHolder, expiryDate, cvv string, amount floa
 	}
 }
 
-// ------------------- PROCESAR PAGO -------------------
 func ProcessPaymentPayU(reference, description string, amount float64, currency, cardNumber, cardHolder, expiryDate, cvv string) (*PayUResponse, error) {
-	// 🔹 Limpiar número de tarjeta
+	// Validar credenciales
+	apiLogin := os.Getenv("PAYU_API_LOGIN")
+	apiKey := os.Getenv("PAYU_API_KEY")
+	merchantId := os.Getenv("PAYU_MERCHANT_ID")
+	accountId := os.Getenv("PAYU_ACCOUNT_ID")
+
+	if apiLogin == "" || apiKey == "" || merchantId == "" || accountId == "" {
+		return nil, fmt.Errorf("❌ Variables de entorno de PayU no configuradas correctamente")
+	}
+
+	fmt.Printf("🔧 Usando credenciales:\n")
+	fmt.Printf("   API_LOGIN: %s\n", apiLogin)
+	fmt.Printf("   MERCHANT_ID: %s\n", merchantId)
+	fmt.Printf("   ACCOUNT_ID: %s\n", accountId)
+	
 	cardNumber = strings.ReplaceAll(cardNumber, " ", "")
 	cardNumber = strings.ReplaceAll(cardNumber, "-", "")
-	
-	// 🔹 Convertir fecha de expiración
 	expiryDate = convertExpiryDate(expiryDate)
-	
-	// 🔹 Detectar tipo de tarjeta
 	cardType := detectCardType(cardNumber)
+
+	// Para COP, PayU espera el valor como entero
+	var txValue string
+	if currency == "COP" {
+		txValue = fmt.Sprintf("%.0f", amount)
+	} else {
+		txValue = fmt.Sprintf("%.2f", amount)
+	}
 
 	reqBody := map[string]interface{}{
 		"language": "es",
 		"command":  "SUBMIT_TRANSACTION",
 		"merchant": map[string]string{
-			"apiLogin": os.Getenv("PAYU_API_LOGIN"),
-			"apiKey":   os.Getenv("PAYU_API_KEY"),
+			"apiLogin": apiLogin,
+			"apiKey":   apiKey,
 		},
 		"transaction": map[string]interface{}{
 			"order": map[string]interface{}{
-				"accountId":     os.Getenv("PAYU_ACCOUNT_ID"),
+				"accountId":     accountId,
 				"referenceCode": reference,
 				"description":   description,
 				"language":      "es",
-				"notifyUrl":     "https://www.payu.com/notify",
+				"signature":     generateSignature(reference, amount, currency),
+				"notifyUrl":     "http://localhost:7000/api/payments/webhook",
 				"additionalValues": map[string]interface{}{
 					"TX_VALUE": map[string]interface{}{
-						"value":    amount,
+						"value":    txValue,
 						"currency": currency,
 					},
 				},
+				"buyer": map[string]interface{}{
+					"merchantBuyerId": "1",
+					"fullName":        cardHolder,
+					"emailAddress":    "test@test.com",
+					"contactPhone":    "3001234567",
+					"dniNumber":       "123456789",
+					"shippingAddress": map[string]interface{}{
+						"street1":    "Calle 100",
+						"street2":    "Oficina 201",
+						"city":       "Bogota",
+						"state":      "Bogota D.C.",
+						"country":    "CO",
+						"postalCode": "110111",
+						"phone":      "3001234567",
+					},
+				},
 			},
-			"payer": map[string]string{
-				"fullName": cardHolder,
+			"payer": map[string]interface{}{
+				"merchantPayerId": "1",
+				"fullName":        cardHolder,
+				"emailAddress":    "test@test.com",
+				"contactPhone":    "3001234567",
+				"dniNumber":       "123456789",
+				"billingAddress": map[string]interface{}{
+					"street1":    "Calle 100",
+					"street2":    "Oficina 201",
+					"city":       "Bogota",
+					"state":      "Bogota D.C.",
+					"country":    "CO",
+					"postalCode": "110111",
+					"phone":      "3001234567",
+				},
 			},
-			"creditCard": map[string]string{
+			"creditCard": map[string]interface{}{
 				"number":         cardNumber,
 				"securityCode":   cvv,
 				"expirationDate": expiryDate,
 				"name":           cardHolder,
 			},
-			"type":            "AUTHORIZATION_AND_CAPTURE",
-			"paymentMethod":   cardType,
-			"paymentCountry":  "CO",
-			"deviceSessionId": fmt.Sprintf("SIM-%d", time.Now().UnixNano()),
+			"extraParameters": map[string]string{
+				"INSTALLMENTS_NUMBER": "1",
+			},
+			"type":           "AUTHORIZATION_AND_CAPTURE",
+			"paymentMethod":  cardType,
+			"paymentCountry": "CO",
+			"deviceSessionId": fmt.Sprintf("vghs6tvkcle931686k1900o6e%d", time.Now().UnixNano()),
+			"ipAddress":      "127.0.0.1",
+			"cookie":         "pt1t38347bs6jc9ruv2ecpv7o2",
+			"userAgent":      "Mozilla/5.0 (Windows NT 5.1; rv:18.0) Gecko/20100101 Firefox/18.0",
 		},
 		"test": true,
 	}
 
-	body, _ := json.Marshal(reqBody)
-
-	// 🔹 Loggear el request que se envía a PayU
-	fmt.Println(" REQUEST A PAYU:")
+	body, _ := json.MarshalIndent(reqBody, "", "  ")
+	fmt.Println("📤 REQUEST A PAYU:")
 	fmt.Println(string(body))
 
-	client := http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Post(sandboxURL, "application/json", bytes.NewBuffer(body))
+	client := http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("POST", sandboxURL, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("error creando request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error al conectar con PayU: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// 🔹 Leer la respuesta CRUDA primero
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error al leer respuesta de PayU: %v", err)
 	}
 
-	// 🔹 Loggear la respuesta cruda
-	fmt.Println(" RESPUESTA CRUDA DE PAYU:")
+	fmt.Printf("📥 RESPUESTA DE PAYU (Status: %d):\n", resp.StatusCode)
 	fmt.Println(string(bodyBytes))
 
-	// 🔹 Verificar si es HTML (error)
+	// Verificar si es HTML (error de autenticación)
 	if strings.HasPrefix(string(bodyBytes), "<") {
-		return nil, fmt.Errorf("error al leer respuesta de PayU: invalid character '<' looking for beginning of value")
+		return nil, fmt.Errorf("❌ PayU devolvió HTML. Verifica:\n1. Credenciales (API_LOGIN, API_KEY, MERCHANT_ID, ACCOUNT_ID)\n2. URL correcta\n3. Estado de la cuenta sandbox")
 	}
 
-	// 🔹 Parsear JSON
 	var payuResp PayUResponse
 	if err := json.Unmarshal(bodyBytes, &payuResp); err != nil {
-		return nil, fmt.Errorf("error al parsear respuesta de PayU: %v", err)
+		return nil, fmt.Errorf("error al parsear respuesta de PayU: %v\nRespuesta: %s", err, string(bodyBytes))
 	}
 
 	return &payuResp, nil
