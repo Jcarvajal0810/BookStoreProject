@@ -16,7 +16,8 @@ const catalogProto = grpc.loadPackageDefinition(packageDefinition).catalog;
 
 class CatalogClient {
   constructor() {
-    const CATALOG_GRPC_URL = process.env.CATALOG_GRPC_URL || 'localhost:50054';
+    const CATALOG_GRPC_URL = process.env.CATALOG_GRPC_URL || 'catalog-grpc:50054';
+    
     this.client = new catalogProto.CatalogService(
       CATALOG_GRPC_URL,
       grpc.credentials.createInsecure()

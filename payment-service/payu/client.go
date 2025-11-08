@@ -202,7 +202,8 @@ func ProcessPaymentPayU(reference, description string, amount float64, currency,
 				"description":   description,
 				"language":      "es",
 				"signature":     generateSignature(reference, amount, currency),
-				"notifyUrl":     "http://localhost:7000/api/payments/webhook",
+				"notifyUrl": "http://payment:7000/api/payments/webhook",
+
 				"additionalValues": map[string]interface{}{
 					"TX_VALUE": map[string]interface{}{
 						"value":    txValue,

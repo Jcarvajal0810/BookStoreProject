@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  labels:
+    app: catalog
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+        - name: catalog
+          image: jcarvajal0810/bookstore-prube-catalog:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: PORT
+              value: "3000"
+            - name: GRPC_PORT
+              value: "50054"

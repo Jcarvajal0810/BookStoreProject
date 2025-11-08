@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 3500
 
 # Ejecuta el servidor de desarrollo accesible desde fuera del contenedor
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3500"]
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "3500"]

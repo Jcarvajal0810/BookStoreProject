@@ -2,7 +2,7 @@ const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const path = require('path');
 
-// ====== IMPORTAR MODELO EXISTENTE ======
+// ====== IMPORTAR MODELO (solo una vez) ======
 const Cart = require('../src/models/cart');
 
 // ====== CARGAR PROTO ======
@@ -124,4 +124,5 @@ function startGrpcServer() {
   );
 }
 
+// ====== EXPORTAR FUNCIÓN (ESTO FALTABA) ======
 module.exports = { startGrpcServer };

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, X, Package, CreditCard, User } from 'lucide-react';
+// src/App.jsx
+import { useState, useEffect, useRef } from 'react';
+import { ShoppingCart, Trash2, Plus, Minus, X, Package } from 'lucide-react';
 
 export default function App() {
   const [books, setBooks] = useState([]);
@@ -8,209 +9,159 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCart, setShowCart] = useState(false);
-
-  // Payment UI state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRef, setPaymentRef] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
-  const [cardData, setCardData] = useState({
-    cardNumber: '',
-    cardHolder: '',
-    expiryDate: '',
-    cvv: '',
-  });
-
-  // USER SERVICE INTEGRATION
+  const [cardData, setCardData] = useState({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
+  const [currentOrderId, setCurrentOrderId] = useState(null);
   const [userId, setUserId] = useState('user-123');
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [token, setToken] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
 
-  // API gateway base
-  const API_URL = 'http://localhost:4500';
+  // Gateway URL from Vite env or fallback
+  const API_URL = import.meta.env.VITE_API_GATEWAY || 'http://54.224.117.4:32257';
+  const cleanUrl = API_URL.replace(/^https?:\/\//, ''); // Remueve http:// o https://
+  const protocol = API_URL.startsWith('https') ? 'wss' : 'ws';
+  // derive WS URL from API_URL (http -> ws, https -> wss)
+  const WS_URL = API_URL.replace(/^http/, 'ws');
+
+  const wsRef = useRef(null);
 
   useEffect(() => {
-    checkSession();
+    console.log(' [App] Iniciando aplicación...');
     fetchBooks();
     fetchCart();
     fetchInventory();
+    initWebsocket();
+    return () => {
+      shutdownWebsocket();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  //  Comprueba token y obtiene profile si existe
-  //  Comprueba token y obtiene profile si existe
-const checkSession = async () => {
-  const t = localStorage.getItem('token');
-  if (!t) return;
-
-  try {
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) {
-      localStorage.removeItem('token');
-      return;
-    }
-
-    const parsedUser = JSON.parse(storedUser);
-    const username = parsedUser?.username;
-
-    if (!username) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      return;
-    }
-
-    //  Codificar el username correctamente para la URL
-    const encodedUsername = encodeURIComponent(username);
-    
-    console.log(` Validando sesión para usuario: ${username}`);
-
-    const res = await fetch(`${API_URL}/users/profile/${encodedUsername}`, {
-      headers: { 
-        'Authorization': `Bearer ${t}`,
-        'Accept': 'application/json'
-      },
-    });
-
-    if (!res.ok) {
-      console.warn(` Error ${res.status} al validar sesión para ${username}`);
-      
-      // Si es 404, el usuario no existe
-      if (res.status === 404) {
-        console.warn(' Usuario no existe en BD, limpiando sesión');
-      }
-      
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      setToken(null);
-      setUser(null);
-      setUserId('user-123');
-      return;
-    }
-
-    const profile = await res.json();
-    setToken(t);
-    setUser(profile);
-    setUserId(profile.id || profile._id || profile.userId || 'user-123');
-    
-    console.log(' Sesión restaurada:', profile.username);
-  } catch (err) {
-    console.error(' Error en checkSession:', err);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
-    setUserId('user-123');
-  }
-};
-
-  // Login
-  const handleLogin = async () => {
-  try {
-    const res = await fetch(`${API_URL}/users/auth/login`, {  
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: authForm.username,
-        password: authForm.password,
-      }),
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      console.error(' Login failed:', res.status, txt);
-      alert('Credenciales incorrectas o error en login');
-      return;
-    }
-
-    const data = await res.json();
-    
-    //  Verificar si hay error en la respuesta
-    if (data.error) {
-      alert('Error: ' + data.error);
-      return;
-    }
-    
-    const tok = data.token;
-    const u = data.user;
-
-    if (!tok || !u) {
-      alert('Respuesta incompleta del servidor');
-      return;
-    }
-
-    localStorage.setItem('token', tok);
-    localStorage.setItem('user', JSON.stringify(u));
-    
-    setToken(tok);
-    setUser(u);
-    setUserId(u.id || u._id || 'user-123');
-
-    setShowLogin(false);
-    setAuthForm({ username: '', email: '', password: '' });
-    alert(` Bienvenido, ${u.username || authForm.username}`);
-    
-    // Refrescar carrito después del login
-    await fetchCart();
-  } catch (err) {
-    console.error(' handleLogin error:', err);
-    alert('Error al iniciar sesión (conexión)');
-  }
-};
-
-  // Register
-  const handleRegister = async () => {
+  // ------------------ WEBSOCKET ------------------
+  function initWebsocket() {
     try {
-      const res = await fetch(`${API_URL}/users/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: authForm.username,
-          email: authForm.email,
-          password: authForm.password,
-        }),
+      const url = WS_URL;
+      console.log('🔌 Conectando WebSocket a', url);
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('🟢 WebSocket abierto');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          // We expect { type: 'STOCK_UPDATE', bookId, stock }
+          if (msg?.type === 'STOCK_UPDATE') {
+            const bookId = msg.bookId || msg.book_id;
+            const newStock = Number(msg.stock ?? msg.new_stock ?? msg.available_units ?? 0);
+            console.log('📡 WS stock update:', bookId, newStock);
+            handleRemoteStockUpdate(bookId, newStock);
+          } else {
+            // other messages (ignore)
+            console.log('📩 WS msg:', msg);
+          }
+        } catch (err) {
+          console.warn('⚠️ WS parse error', err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('🔴 WebSocket error:', err);
+      };
+
+      ws.onclose = (ev) => {
+        console.log('🔴 WebSocket cerrado', ev.reason || ev.code);
+        // try reconnect after short delay
+        setTimeout(() => {
+          if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+            console.log('🔁 Reintentando conexión WebSocket...');
+            initWebsocket();
+          }
+        }, 3000);
+      };
+    } catch (err) {
+      console.error('❌ initWebsocket error:', err);
+    }
+  }
+
+  function shutdownWebsocket() {
+    try {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+        console.log('🛑 WebSocket cerrado (cleanup)');
+      }
+    } catch (err) {
+      console.warn('⚠️ Error cerrando WebSocket:', err);
+    }
+  }
+
+  // Reaction when remote stock update arrives
+  const handleRemoteStockUpdate = async (bookId, newStock) => {
+    try {
+      // Update local inventory map
+      setInventory(prev => {
+        const next = { ...prev, [bookId]: newStock };
+        return next;
       });
 
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        console.error('Register failed:', res.status, txt);
-        alert('Error al registrarse');
-        return;
-      }
+      // Option B: alert to user
+      alert(`Stock actualizado: el libro ${bookId} ahora tiene ${newStock} unidades`);
 
-      await res.json().catch(() => ({}));
-      alert('Registro exitoso. Ahora puedes iniciar sesión.');
-      setShowRegister(false);
-      setShowLogin(true);
-      setAuthForm({ username: '', email: '', password: '' });
+      // If any item in cart exceeds new stock, adjust cart and notify user.
+      const cartItem = cart.find(i => i.book_id === bookId || i.book_id === bookId);
+      if (cartItem) {
+        const currentQty = Number(cartItem.quantity || 0);
+        if (newStock <= 0) {
+          // remove item
+          try {
+            await removeFromCart(bookId);
+            alert(`El libro "${cartItem.title}" se eliminó del carrito: stock en 0`);
+          } catch (err) {
+            console.warn('Error removiendo del carrito en WS update:', err);
+          }
+        } else if (currentQty > newStock) {
+          // reduce quantity to newStock
+          try {
+            await updateQuantity(bookId, newStock);
+            alert(`La cantidad de "${cartItem.title}" en tu carrito fue ajustada a ${newStock} por cambio de stock.`);
+          } catch (err) {
+            console.warn('Error actualizando cantidad en WS update:', err);
+            // As fallback, update local cart state so UI is consistent
+            setCart(prev => prev.map(it => it.book_id === bookId ? { ...it, quantity: Math.min(it.quantity, newStock) } : it));
+          }
+        } else {
+          // no action required
+        }
+      }
     } catch (err) {
-      console.error('handleRegister error:', err);
-      alert('Error al registrarse (conexión)');
+      console.error('❌ handleRemoteStockUpdate error:', err);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
-    setUserId('user-123');
-    alert('Sesión cerrada');
-  };
-
-  // ORIGINAL FUNCTIONS
+  // ------------------ FETCH / API ------------------
   const fetchBooks = async () => {
     try {
+      console.log('📚 [fetchBooks] Cargando catálogo...');
       setLoading(true);
       setError(null);
       const response = await fetch(`${API_URL}/catalog`);
       if (!response.ok) throw new Error(`Error: ${response.status}`);
       const data = await response.json();
-      setBooks(data || []);
+
+      // If API returns books merged with stock, respect that; otherwise we keep as-is and rely on inventory map
+      setBooks(Array.isArray(data) ? data : []);
+      console.log(` [fetchBooks] ${Array.isArray(data) ? data.length : 0} libros cargados`);
     } catch (err) {
       setError(err.message);
-      console.error('Error fetching books:', err);
+      console.error(' [fetchBooks] Error:', err);
     } finally {
       setLoading(false);
     }
@@ -218,45 +169,59 @@ const checkSession = async () => {
 
   const fetchCart = async () => {
     try {
+      console.log(` [fetchCart] Obteniendo carrito para userId: ${userId}`);
       const response = await fetch(`${API_URL}/cart/${userId}`);
       if (response.ok) {
         const data = await response.json();
+        console.log(` [fetchCart] Carrito obtenido: ${data.items?.length || 0} items`);
         setCart(data.items || []);
       } else {
+        console.log(' [fetchCart] Carrito vacío o no encontrado');
         setCart([]);
       }
     } catch (err) {
-      console.log('Carrito vacío o error:', err);
+      console.log(' [fetchCart] Error:', err);
       setCart([]);
     }
   };
 
   const fetchInventory = async () => {
     try {
-      const response = await fetch(`${API_URL}/inventory/`);
+      console.log('📦 [fetchInventory] Consultando inventario...');
+      const response = await fetch(`${API_URL}/inventory/`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+
       if (response.ok) {
         const data = await response.json();
         const inventoryArray = Array.isArray(data) ? data : [];
         const inventoryMap = {};
         inventoryArray.forEach(item => {
-          if (item.book_id) {
-            inventoryMap[item.book_id] = item.stock || 0;
-          }
+          if (item.book_id) inventoryMap[item.book_id] = item.stock || 0;
         });
         setInventory(inventoryMap);
+        console.log('✅ [fetchInventory] Inventario mapeado:', inventoryMap);
+      } else {
+        console.error('❌ [fetchInventory] Error HTTP:', response.status);
       }
     } catch (err) {
-      console.error('Error fetching inventory:', err);
+      console.error('❌ [fetchInventory] Error:', err.message);
       setInventory({});
     }
   };
 
+  // ------------------ CART ACTIONS ------------------
   const getAvailableStock = (bookId) => {
-    return inventory[bookId] !== undefined ? inventory[bookId] : 0;
+    const stock = inventory[bookId] !== undefined ? inventory[bookId] : 0;
+    return stock;
   };
 
   const addToCart = async (book) => {
     const availableStock = getAvailableStock(book._id);
+    console.log(` [addToCart] Agregando "${book.name}" (Stock: ${availableStock})`);
 
     if (availableStock <= 0) {
       alert('Este libro no tiene stock disponible');
@@ -276,39 +241,29 @@ const checkSession = async () => {
         }),
       });
 
-      if (response.ok) {
-        await updateInventoryStock(book._id, availableStock - 1);
-        await fetchCart();
-        await fetchInventory();
-        alert(`"${book.name}" agregado al carrito`);
-      } else {
-        const text = await response.text().catch(() => 'Error');
-        alert('Error al agregar al carrito: ' + text);
+      const textOrJson = await response.text();
+      try {
+        const json = JSON.parse(textOrJson);
+        if (!response.ok) throw new Error(json.message || JSON.stringify(json));
+      } catch (_) {
+        if (!response.ok) throw new Error(textOrJson || 'Unknown error');
       }
-    } catch (err) {
-      alert('Error al agregar al carrito');
-      console.error(err);
-    }
-  };
 
-  const updateInventoryStock = async (bookId, newStock) => {
-    try {
-      await fetch(`${API_URL}/inventory/${bookId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          book_id: bookId,
-          stock: newStock,
-        }),
-      });
+      console.log(' [addToCart] Item agregado');
+      await fetchCart();
+      console.log(' [addToCart] Refrescando inventario...');
+      await fetchInventory();
+      alert(`"${book.name}" agregado al carrito`);
     } catch (err) {
-      console.error('Error updating inventory:', err);
+      console.error(' [addToCart] Error:', err);
+      alert('Error al agregar al carrito: ' + (err.message || err));
     }
   };
 
   const updateQuantity = async (bookId, newQuantity) => {
+    console.log(` [updateQuantity] Book ${bookId}: ${newQuantity}`);
     if (newQuantity < 1) {
-      removeFromCart(bookId);
+      await removeFromCart(bookId);
       return;
     }
 
@@ -316,349 +271,352 @@ const checkSession = async () => {
       const response = await fetch(`${API_URL}/cart/update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          book_id: bookId,
-          quantity: newQuantity,
-        }),
+        body: JSON.stringify({ user_id: userId, book_id: bookId, quantity: newQuantity }),
       });
 
-      if (response.ok) {
-        await fetchCart();
-      } else {
-        console.error('Error updating quantity', response.status);
+      if (!response.ok) {
+        const txt = await response.text().catch(() => 'Error');
+        throw new Error(txt);
       }
+
+      console.log(' [updateQuantity] Actualizado');
+      await fetchCart();
+      await fetchInventory();
     } catch (err) {
-      console.error('Error updating quantity:', err);
+      console.error(' [updateQuantity] Error:', err);
+      alert('No se pudo actualizar la cantidad: ' + (err.message || err));
     }
   };
 
   const removeFromCart = async (bookId) => {
+    console.log(` [removeFromCart] Book ${bookId}`);
     try {
-      const response = await fetch(`${API_URL}/cart/remove/${bookId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchCart();
-        await fetchInventory();
-      } else {
-        console.error('Error removing item', response.status);
+      const response = await fetch(`${API_URL}/cart/remove/${bookId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const txt = await response.text().catch(() => 'Error');
+        throw new Error(txt);
       }
+      console.log(' [removeFromCart] Eliminado');
+      await fetchCart();
+      await fetchInventory();
     } catch (err) {
-      console.error('Error removing item:', err);
+      console.error(' [removeFromCart] Error:', err);
+      alert('No se pudo eliminar el item del carrito: ' + (err.message || err));
     }
   };
 
   const clearCart = async (silent = false) => {
-    if (!silent && !confirm('¿Vaciar todo el carrito?')) return;
-
+    if (!silent && !confirm('¿Vaciar carrito?')) return;
+    console.log('🧹 [clearCart] Vaciando...');
     try {
-      const response = await fetch(`${API_URL}/cart/clear/${userId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchCart();
-        await fetchInventory();
-      } else {
-        console.error('Error clearing cart', response.status);
+      const response = await fetch(`${API_URL}/cart/clear/${userId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const txt = await response.text().catch(() => 'Error');
+        throw new Error(txt);
       }
+      console.log('✅ [clearCart] Vaciado');
+      await fetchCart();
+      await fetchInventory();
     } catch (err) {
-      console.error('Error clearing cart:', err);
+      console.error('❌ [clearCart] Error:', err);
+      alert('Error al vaciar carrito: ' + (err.message || err));
     }
   };
 
-  // ✅ Proceso de orden mejorado
+  // ------------------ ORDER & PAYMENT (igual que tenías) ------------------
   const processOrder = async () => {
     if (cart.length === 0) {
       alert('El carrito está vacío');
       return;
     }
-
     if (!confirm('¿Confirmar pedido?')) return;
 
     try {
-      console.log('📦 Creando orden desde carrito...');
-
+      console.log('📦 [processOrder] Creando orden...');
       const orderRes = await fetch(`${API_URL}/order`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
         body: JSON.stringify({ userId: userId })
       });
 
       if (!orderRes.ok) {
-        const errorText = await orderRes.text().catch(() => 'Error desconocido');
-        console.error('❌ Error creando orden:', orderRes.status, errorText);
-        alert('Error al crear la orden: ' + errorText);
+        const errorText = await orderRes.text().catch(() => 'Error');
+        console.error('❌ [processOrder] Error:', orderRes.status, errorText);
+        alert('Error al crear orden: ' + errorText);
         return;
       }
 
       const orderData = await orderRes.json();
-      console.log('✅ Orden creada:', orderData);
-
-      // Extraer el orderId de la respuesta
+      console.log('✅ [processOrder] Orden creada:', orderData);
       const orderId = orderData.order_id;
-      
+
       if (!orderId) {
-        alert('Error: No se recibió el ID de la orden');
+        alert('Error: No se recibió orderId');
         return;
       }
 
-      // Guardar orderId para usarlo después en la notificación de pago
-      localStorage.setItem('currentOrderId', orderId);
-      console.log('💾 OrderId guardado:', orderId);
+      setCurrentOrderId(orderId);
+      console.log('💾 [processOrder] OrderId guardado:', orderId);
+      console.log('🔄 [processOrder] Refrescando inventario tras reserva...');
+      await fetchInventory();
 
-      // Si la orden ya incluye el pago procesado (flujo antiguo)
       if (orderData.success && orderData.transaction_id) {
-        alert(`✅ Orden completada!\nID: ${orderId}\nTotal: $${orderData.total.toLocaleString()}`);
+        alert(`✅ Orden completada!\nID: ${orderId}`);
         await clearCart(true);
         setShowCart(false);
-        localStorage.removeItem('currentOrderId');
+        setCurrentOrderId(null);
         return;
       }
 
-      // Crear referencia de pago y abrir modal (nuevo flujo)
       const totalAmount = getCartTotal();
       const created = await createPaymentAndOpenModal(orderId, totalAmount);
-      
       if (!created) {
-        alert('Orden creada pero no se pudo iniciar el pago.');
-        localStorage.removeItem('currentOrderId');
+        alert('Orden creada pero no se pudo iniciar pago');
+        setCurrentOrderId(null);
       }
+    } catch (err) {
+      console.error('❌ [processOrder] Error:', err);
+      alert('Error: ' + err.message);
+      setCurrentOrderId(null);
+    }
+  };
 
-  } catch (err) {
-    console.error(' Error en processOrder:', err);
-    alert('Error al procesar el pedido: ' + err.message);
-    localStorage.removeItem('currentOrderId');
-  }
-};
-
-  // Crear pago vía API gateway
   const createPaymentAndOpenModal = async (orderId, amount) => {
     try {
+      console.log('💳 [createPayment] Creando pago...');
       const res = await fetch(`${API_URL}/payment/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: userId,
-          orderId: orderId,
-          amount: amount,
-          currency: 'COP',
-          description: `Pago por pedido ${orderId}`,
-          buyerEmail: user?.email || 'testbuyer@example.com',
+          userId, orderId, amount, currency: 'COP',
+          description: `Pago pedido ${orderId}`,
+          buyerEmail: user?.email || 'test@example.com',
           paymentMethod: 'credit_card',
         }),
       });
 
       if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        console.error('create payment failed', res.status, body);
+        console.error('❌ [createPayment] Error:', res.status);
         return false;
       }
 
       const payment = await res.json();
       if (!payment.reference) {
-        console.error('payment response missing reference', payment);
+        console.error('❌ [createPayment] Sin referencia');
         return false;
       }
 
+      console.log('✅ [createPayment] Ref:', payment.reference);
       setPaymentRef(payment.reference);
       setShowPaymentModal(true);
       return true;
     } catch (err) {
-      console.error('Error creating payment:', err);
+      console.error('❌ [createPayment] Error:', err);
       return false;
     }
   };
 
-  //  Procesar pago con manejo completo de errores
   const processPayment = async () => {
-  if (!paymentRef) {
-    alert('Referencia de pago no encontrada');
-    return;
-  }
-
-  if (!cardData.cardNumber || !cardData.cardHolder) {
-    alert('Ingrese los datos de la tarjeta');
-    return;
-  }
-
-  setProcessingPayment(true);
-
-  try {
-    const res = await fetch(`${API_URL}/payment/${paymentRef}/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cardNumber: cardData.cardNumber,
-        cardHolder: cardData.cardHolder,
-        expiryDate: cardData.expiryDate,
-        cvv: cardData.cvv,
-      }),
-    });
-
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      console.error('Respuesta no es JSON:', contentType);
-      const textResponse = await res.text();
-      console.error('Contenido recibido:', textResponse);
-      alert('Error del servidor: respuesta inválida');
-      setProcessingPayment(false);
+    if (!paymentRef) {
+      alert('Referencia no encontrada');
+      return;
+    }
+    if (!cardData.cardNumber || !cardData.cardHolder) {
+      alert('Ingrese datos de tarjeta');
       return;
     }
 
-    let result;
+    console.log('💳 [processPayment] Procesando pago...');
+    setProcessingPayment(true);
+
     try {
-      result = await res.json();
-    } catch (parseErr) {
-      console.error('Error parsing JSON:', parseErr);
-      alert('Error al procesar la respuesta del servidor');
-      setProcessingPayment(false);
-      return;
-    }
+      const res = await fetch(`${API_URL}/payment/${paymentRef}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cardData),
+      });
 
-    // Caso: Ya procesado
-    if (!res.ok && result.error === 'already processed') {
-      const paymentStatus = result.status || result.payment?.status || result.payment?.Status;
-      
-      if (paymentStatus === 'APPROVED') {
-        alert(' Este pago ya fue aprobado anteriormente');
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('❌ [processPayment] Respuesta no JSON');
+        alert('Error del servidor');
+        setProcessingPayment(false);
+        return;
+      }
+
+      const result = await res.json();
+      console.log('📄 [processPayment] Respuesta:', result);
+
+      if (!res.ok && result.error === 'already processed') {
+        const paymentStatus = result.status || result.payment?.status;
+        console.log('⚠️ [processPayment] Ya procesado:', paymentStatus);
+        if (paymentStatus === 'APPROVED') {
+          alert('✅ Pago ya aprobado');
+          await clearCart(true);
+          setShowPaymentModal(false);
+          setPaymentRef(null);
+          setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
+          setShowCart(false);
+        } else {
+          alert(`⚠️ Ya procesado: ${paymentStatus}`);
+        }
+        setProcessingPayment(false);
+        return;
+      }
+
+      if (!res.ok) {
+        console.error('❌ [processPayment] Fallido:', result);
+        alert('❌ Error: ' + (result.error || result.message || 'Desconocido'));
+        setProcessingPayment(false);
+        return;
+      }
+
+      const status = result.status || result.Status;
+      const responseMsg = result.responseMessage || result.ResponseMessage || '';
+      const transactionId = result.transactionId || result.TransactionID || '';
+
+      console.log('📊 [processPayment] Status:', status, 'TxID:', transactionId);
+
+      if (currentOrderId) {
+        try {
+          console.log(`📤 [processPayment] Notificando Order Service...`);
+          await fetch(`${API_URL}/orders/${currentOrderId}/payment-result`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ status, transactionId, message: responseMsg })
+          });
+          console.log('✅ [processPayment] Notificado');
+          setCurrentOrderId(null);
+        } catch (notifyErr) {
+          console.error('❌ [processPayment] Error notificando:', notifyErr);
+        }
+      }
+
+      if (status === 'APPROVED') {
+        console.log('✅ [processPayment] APROBADO');
+        alert('✅ Pago aprobado: ' + (responseMsg || 'Exitoso'));
         await clearCart(true);
         setShowPaymentModal(false);
         setPaymentRef(null);
         setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
         setShowCart(false);
+        console.log('🔄 [processPayment] Refrescando inventario...');
+        await fetchInventory();
+      } else if (status === 'DECLINED' || status === 'REJECTED') {
+        console.log('❌ [processPayment] RECHAZADO');
+        alert('❌ Rechazado: ' + (responseMsg || 'Declinado'));
       } else {
-        alert(` Este pago ya fue procesado con estado: ${paymentStatus}`);
+        console.log(`⚠️ [processPayment] Estado: ${status}`);
+        alert('⚠️ Estado: ' + status + '\n' + responseMsg);
       }
+    } catch (err) {
+      console.error('❌ [processPayment] Error:', err);
+      alert('Error: ' + err.message);
+    } finally {
       setProcessingPayment(false);
-      return;
     }
-
-    // Caso: Error HTTP
-    if (!res.ok) {
-      console.error('Payment failed:', res.status, result);
-      const errorMsg = result.error || result.message || result.responseMessage || 'Error desconocido';
-      alert(' Error al procesar el pago: ' + errorMsg);
-      setProcessingPayment(false);
-      return;
-    }
-
-    // Caso: Pago procesado exitosamente
-    const status = result.status || result.Status;
-    const responseMsg = result.responseMessage || result.ResponseMessage || '';
-    const transactionId = result.transactionId || result.TransactionID || '';
-
-    console.log(' Notificando resultado al Order Service...');
-    console.log('   Status:', status);
-    console.log('   Transaction ID:', transactionId);
-
-    //  NOTIFICAR AL ORDER SERVICE
-    // Necesitamos obtener el orderId que guardamos al crear la orden
-    const orderId = localStorage.getItem('currentOrderId');
-    
-    if (orderId) {
-      try {
-        await fetch(`${API_URL}/orders/${orderId}/payment-result`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            status: status,
-            transactionId: transactionId,
-            message: responseMsg
-          })
-        });
-        
-        // Limpiar el orderId guardado
-        localStorage.removeItem('currentOrderId');
-        
-        console.log(' Order Service notificado del resultado del pago');
-      } catch (notifyErr) {
-        console.error(' Error notificando al Order Service:', notifyErr);
-        // No bloqueamos el flujo si falla la notificación
-      }
-    }
-
-    // Actualizar UI según el estado
-    if (status === 'APPROVED') {
-      alert(' Pago aprobado: ' + (responseMsg || 'Transacción exitosa'));
-      await clearCart(true);
-      setShowPaymentModal(false);
-      setPaymentRef(null);
-      setCardData({ cardNumber: '', cardHolder: '', expiryDate: '', cvv: '' });
-      setShowCart(false);
-      
-      // Refrescar inventario
-      await fetchInventory();
-    } else if (status === 'DECLINED' || status === 'REJECTED') {
-      alert(' Pago rechazado: ' + (responseMsg || 'Transacción declinada'));
-    } else {
-      alert(' Pago con estado: ' + status + '\n' + responseMsg);
-    }
-
-  } catch (err) {
-    console.error('Error processing payment:', err);
-    alert('Error procesando pago (conexión): ' + err.message);
-  } finally {
-    setProcessingPayment(false);
-  }
-};
-
-  const getCartTotal = () => {
-    return cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
   };
 
-  const getCartItemCount = () => {
-    return cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  // ------------------ AUTH ------------------
+  const handleLogin = async () => {
+    try {
+      console.log('🔐 [handleLogin] Intentando login...');
+      const res = await fetch(`${API_URL}/users/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authForm.username, password: authForm.password }),
+      });
+
+      if (!res.ok) {
+        console.error('❌ [handleLogin] Fallido');
+        alert('Credenciales incorrectas');
+        return;
+      }
+
+      const data = await res.json();
+      if (data.error || !data.token || !data.user) {
+        alert('Error: ' + (data.error || 'Respuesta incompleta'));
+        return;
+      }
+
+      console.log('✅ [handleLogin] Exitoso:', data.user.username);
+      setToken(data.token);
+      setUser(data.user);
+      setUserId(data.user.id || data.user._id || 'user-123');
+      setShowLogin(false);
+      setAuthForm({ username: '', email: '', password: '' });
+      alert(`✅ Bienvenido, ${data.user.username}`);
+      await fetchCart();
+    } catch (err) {
+      console.error('❌ [handleLogin] Error:', err);
+      alert('Error de conexión');
+    }
   };
 
+  const handleRegister = async () => {
+    try {
+      console.log('📝 [handleRegister] Intentando registro...');
+      const res = await fetch(`${API_URL}/users/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authForm.username, email: authForm.email, password: authForm.password }),
+      });
+
+      if (!res.ok) {
+        console.error('❌ [handleRegister] Fallido');
+        alert('Error al registrarse');
+        return;
+      }
+
+      console.log('✅ [handleRegister] Exitoso');
+      alert('Registro exitoso. Ahora inicia sesión.');
+      setShowRegister(false);
+      setShowLogin(true);
+      setAuthForm({ username: '', email: '', password: '' });
+    } catch (err) {
+      console.error('❌ [handleRegister] Error:', err);
+      alert('Error de conexión');
+    }
+  };
+
+  const handleLogout = () => {
+    console.log('👋 [handleLogout] Cerrando sesión');
+    setToken(null);
+    setUser(null);
+    setUserId('user-123');
+    alert('Sesión cerrada');
+  };
+
+  // ------------------ HELPERS ------------------
+  const getCartTotal = () => cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+  const getCartItemCount = () => cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   const keyFor = (id, i) => (id ? `${id}-${i}` : `item-${i}`);
 
+  // ------------------ RENDER ------------------
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-50 p-6 text-white bg-indigo-600 shadow-md">
         <div className="container flex items-center justify-between mx-auto">
           <h1 className="text-3xl font-bold">📚 Librería Telemática</h1>
-
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <span className="text-sm font-medium">👋 {user.username || user.email || 'Usuario'}</span>
-                <button
-                  onClick={handleLogout}
-                  className="px-3 py-1 text-sm bg-red-500 rounded hover:bg-red-600"
-                >
+                <span className="text-sm font-medium">👋 {user.username}</span>
+                <button onClick={handleLogout} className="px-3 py-1 text-sm bg-red-500 rounded hover:bg-red-600">
                   Cerrar sesión
                 </button>
               </>
             ) : (
               <>
-                <button
-                  onClick={() => setShowLogin(true)}
-                  className="px-3 py-1 text-sm text-indigo-600 bg-white rounded hover:bg-indigo-50"
-                >
+                <button onClick={() => setShowLogin(true)} className="px-3 py-1 text-sm text-indigo-600 bg-white rounded hover:bg-indigo-50">
                   Iniciar sesión
                 </button>
-                <button
-                  onClick={() => setShowRegister(true)}
-                  className="px-3 py-1 text-sm text-green-700 bg-green-100 rounded hover:bg-green-200"
-                >
+                <button onClick={() => setShowRegister(true)} className="px-3 py-1 text-sm text-green-700 bg-green-100 rounded hover:bg-green-200">
                   Registrarse
                 </button>
               </>
             )}
-
-            <button
-              onClick={() => setShowCart(!showCart)}
-              className="relative flex items-center gap-2 px-4 py-2 text-indigo-600 transition-colors bg-white rounded-lg hover:bg-indigo-50"
-            >
+            <button onClick={() => setShowCart(!showCart)} className="relative flex items-center gap-2 px-4 py-2 text-indigo-600 bg-white rounded-lg hover:bg-indigo-50">
               <ShoppingCart size={20} />
               <span>Carrito</span>
               {getCartItemCount() > 0 && (
@@ -681,72 +639,50 @@ const checkSession = async () => {
 
         {error && (
           <div className="px-6 py-4 text-red-800 border border-red-200 rounded-lg bg-red-50">
-            <h3 className="mb-2 font-bold">Error al cargar los libros</h3>
+            <h3 className="mb-2 font-bold">Error al cargar libros</h3>
             <p>{error}</p>
           </div>
         )}
 
         {!loading && !error && (
           <>
-            <h2 className="mb-6 text-2xl font-semibold text-gray-800">
-              Catálogo de Libros
-            </h2>
-
+            <h2 className="mb-6 text-2xl font-semibold text-gray-800">Catálogo de Libros</h2>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {books.map((book, i) => (
-                <div
-                  key={keyFor(book._id, i)}
-                  className="overflow-hidden transition-shadow duration-300 bg-white rounded-lg shadow-md hover:shadow-xl"
-                >
+                <div key={keyFor(book._id, i)} className="overflow-hidden transition-shadow bg-white rounded-lg shadow-md hover:shadow-xl">
                   <div className="relative flex items-center justify-center w-full h-64 overflow-hidden bg-white">
                     {book.image ? (
-                      <img
-                        src={book.image}
-                        alt={book.name}
-                        className="object-contain w-full h-full p-4"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const parent = e.target.parentElement;
-                          if (!parent.querySelector('.placeholder-icon')) {
-                            const icon = document.createElement('div');
-                            icon.className = 'flex items-center justify-center w-full h-48 placeholder-icon';
-                            icon.innerHTML = '<span class="text-6xl">📚</span>';
-                            parent.appendChild(icon);
-                          }
-                        }}
-                      />
+                      <img src={book.image} alt={book.name} className="object-contain w-full h-full p-4" onError={(e) => {
+                        e.target.style.display = 'none';
+                        const parent = e.target.parentElement;
+                        if (!parent.querySelector('.placeholder-icon')) {
+                          const icon = document.createElement('div');
+                          icon.className = 'flex items-center justify-center w-full h-48 placeholder-icon';
+                          icon.innerHTML = '<span class="text-6xl">📚</span>';
+                          parent.appendChild(icon);
+                        }
+                      }} />
                     ) : (
                       <div className="flex items-center justify-center w-full h-48">
                         <span className="text-6xl">📚</span>
                       </div>
                     )}
                   </div>
-
                   <div className="p-6">
                     <h3 className="mb-2 text-xl font-bold text-gray-900">{book.name}</h3>
                     <p className="mb-2 text-gray-600">por {book.author}</p>
                     <p className="mb-4 text-sm text-gray-500 line-clamp-2">{book.description}</p>
-
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-2xl font-bold text-indigo-600">${Number(book.price).toLocaleString()}</span>
-                      <span
-                        className={`text-sm px-2 py-1 rounded ${
-                          getAvailableStock(book._id) > 5
-                            ? 'bg-green-100 text-green-800'
-                            : getAvailableStock(book._id) > 0
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
-                      >
+                      <span className={`text-sm px-2 py-1 rounded ${
+                        getAvailableStock(book._id) > 5 ? 'bg-green-100 text-green-800' :
+                        getAvailableStock(book._id) > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                      }`}>
                         Stock: {getAvailableStock(book._id)}
                       </span>
                     </div>
-
-                    <button
-                      onClick={() => addToCart(book)}
-                      disabled={getAvailableStock(book._id) === 0}
-                      className="flex items-center justify-center w-full gap-2 py-2 text-white transition-colors bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                    >
+                    <button onClick={() => addToCart(book)} disabled={getAvailableStock(book._id) === 0}
+                      className="flex items-center justify-center w-full gap-2 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
                       <ShoppingCart size={18} />
                       {getAvailableStock(book._id) === 0 ? 'Sin Stock' : 'Agregar al Carrito'}
                     </button>
@@ -760,10 +696,7 @@ const checkSession = async () => {
 
       {showCart && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setShowCart(false)}>
-          <div
-            className="fixed top-0 right-0 w-full h-full max-w-md overflow-y-auto bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="fixed top-0 right-0 w-full h-full max-w-md overflow-y-auto bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold">🛒 Mi Carrito</h2>
@@ -788,36 +721,28 @@ const checkSession = async () => {
                             <Trash2 size={18} />
                           </button>
                         </div>
-
                         <p className="mb-3 font-bold text-indigo-600">${Number(item.price).toLocaleString()}</p>
-
                         <div className="flex items-center gap-3">
                           <button onClick={() => updateQuantity(item.book_id, item.quantity - 1)} className="p-1 bg-gray-200 rounded hover:bg-gray-300">
                             <Minus size={16} />
                           </button>
-
                           <span className="w-8 font-semibold text-center">{item.quantity}</span>
-
                           <button onClick={() => updateQuantity(item.book_id, item.quantity + 1)} className="p-1 bg-gray-200 rounded hover:bg-gray-300">
                             <Plus size={16} />
                           </button>
-
                           <span className="ml-auto font-bold">${(Number(item.price) * Number(item.quantity)).toLocaleString()}</span>
                         </div>
                       </div>
                     ))}
-
-                    <div className="pt-4 mb-4 border-t">
+                    <div className="pt-4 border-t">
                       <div className="flex items-center justify-between mb-4 text-xl font-bold">
                         <span>Total:</span>
                         <span className="text-indigo-600">${getCartTotal().toLocaleString()}</span>
                       </div>
-
-                      <button onClick={() => clearCart()} className="w-full py-3 mb-3 text-white transition-colors bg-red-500 rounded-lg hover:bg-red-600">
+                      <button onClick={() => clearCart()} className="w-full py-3 mb-3 text-white bg-red-500 rounded-lg hover:bg-red-600">
                         Vaciar Carrito
                       </button>
-
-                      <button onClick={processOrder} className="flex items-center justify-center w-full gap-2 py-3 text-white transition-colors bg-green-600 rounded-lg hover:bg-green-700">
+                      <button onClick={processOrder} className="flex items-center justify-center w-full gap-2 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700">
                         <Package size={20} />
                         Confirmar Pedido
                       </button>
@@ -830,7 +755,6 @@ const checkSession = async () => {
         </div>
       )}
 
-      {/* Payment Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
           <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg">
@@ -840,54 +764,25 @@ const checkSession = async () => {
                 <X size={20} />
               </button>
             </div>
-
-            <p className="mb-2 text-sm text-gray-600">Referencia: <span className="font-mono">{paymentRef || '—'}</span></p>
+            <p className="mb-2 text-sm text-gray-600">Referencia: <span className="font-mono">{paymentRef}</span></p>
             <p className="mb-4 text-sm text-gray-600">Total: <strong>${getCartTotal().toLocaleString()}</strong></p>
-
             <div className="space-y-3">
-              <input
-                value={cardData.cardNumber}
-                onChange={(e) => setCardData({ ...cardData, cardNumber: e.target.value })}
-                className="w-full px-3 py-2 border rounded"
-                placeholder="Número de tarjeta (pruebas)"
-              />
-              <input
-                value={cardData.cardHolder}
-                onChange={(e) => setCardData({ ...cardData, cardHolder: e.target.value })}
-                className="w-full px-3 py-2 border rounded"
-                placeholder="Titular"
-              />
+              <input value={cardData.cardNumber} onChange={(e) => setCardData({ ...cardData, cardNumber: e.target.value })}
+                className="w-full px-3 py-2 border rounded" placeholder="Número de tarjeta" />
+              <input value={cardData.cardHolder} onChange={(e) => setCardData({ ...cardData, cardHolder: e.target.value })}
+                className="w-full px-3 py-2 border rounded" placeholder="Titular" />
               <div className="flex gap-2">
-                <input
-                  value={cardData.expiryDate}
-                  onChange={(e) => setCardData({ ...cardData, expiryDate: e.target.value })}
-                  className="flex-1 px-3 py-2 border rounded"
-                  placeholder="MM/YY"
-                />
-                <input
-                  value={cardData.cvv}
-                  onChange={(e) => setCardData({ ...cardData, cvv: e.target.value })}
-                  className="w-24 px-3 py-2 border rounded"
-                  placeholder="CVV"
-                />
+                <input value={cardData.expiryDate} onChange={(e) => setCardData({ ...cardData, expiryDate: e.target.value })}
+                  className="flex-1 px-3 py-2 border rounded" placeholder="MM/YY" />
+                <input value={cardData.cvv} onChange={(e) => setCardData({ ...cardData, cvv: e.target.value })}
+                  className="w-24 px-3 py-2 border rounded" placeholder="CVV" />
               </div>
-
               <div className="flex gap-3 mt-3">
                 <button onClick={() => setShowPaymentModal(false)} className="flex-1 px-4 py-2 text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
                   Cancelar
                 </button>
-
-                <button 
-                  onClick={async () => {
-                    if (!paymentRef) {
-                      const created = await createPaymentAndOpenModal(`ORDER-TMP-${Date.now()}`, getCartTotal());
-                      if (!created) return;
-                    }
-                    await processPayment();
-                  }} 
-                  disabled={processingPayment} 
-                  className="flex-1 px-4 py-2 text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:bg- gray-300 disabled:cursor-not-allowed"
-                >
+                <button onClick={processPayment} disabled={processingPayment}
+                  className="flex-1 px-4 py-2 text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
                   {processingPayment ? 'Procesando...' : 'Pagar ahora'}
                 </button>
               </div>
@@ -896,7 +791,6 @@ const checkSession = async () => {
         </div>
       )}
 
-      {/* LOGIN Modal */}
       {showLogin && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
           <div className="w-full max-w-sm p-6 bg-white rounded-lg shadow-lg">
@@ -932,7 +826,6 @@ const checkSession = async () => {
         </div>
       )}
 
-      {/* REGISTER Modal */}
       {showRegister && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
           <div className="w-full max-w-sm p-6 bg-white rounded-lg shadow-lg">

@@ -363,14 +363,15 @@ import('./grpc/orderServer.js').catch(err => {
 });
 
 // ====== INICIAR SERVIDOR REST ======
-app.listen(PORT, () => {
+const host = "0.0.0.0";
+app.listen(PORT, host, () => {
   console.log(`\n${'='.repeat(60)}`);
-  console.log(` Order Service iniciado`);
+  console.log(`  Order Service iniciado`);
   console.log(`${'='.repeat(60)}`);
-  console.log(` REST API: http://localhost:${PORT}`);
-  console.log(` gRPC Server: localhost:${process.env.GRPC_PORT || 50056}`);
-  console.log(` Inventory gRPC: ${process.env.INVENTORY_GRPC_URL || 'localhost:50051'}`);
-  console.log(` Payment gRPC: ${process.env.PAYMENT_GRPC_URL || 'localhost:50052'}`);
-  console.log(` Cart gRPC: ${process.env.CART_GRPC_URL || 'localhost:50053'}`);
+  console.log(`  REST API: http://${host}:${PORT}`);
+  console.log(`  gRPC Server: ${host}:${process.env.GRPC_PORT || 50056}`);
+  console.log(`  Inventory gRPC: ${process.env.INVENTORY_GRPC_URL || 'inventory-grpc:50051'}`);
+  console.log(`  Payment gRPC: ${process.env.PAYMENT_GRPC_URL || 'payment:50052'}`);
+  console.log(`  Cart gRPC: ${process.env.CART_GRPC_URL || 'cart:50053'}`);
   console.log(`${'='.repeat(60)}\n`);
 });

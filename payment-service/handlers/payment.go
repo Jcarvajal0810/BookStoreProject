@@ -84,13 +84,13 @@ func CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	result, err := database.PaymentsCollection.InsertOne(context.Background(), payment)
 	if err != nil {
-		log.Printf("❌ Database insert failed: %v", err)
+		log.Printf(" Database insert failed: %v", err)
 		http.Error(w, `{"error":"database insert failed"}`, http.StatusInternalServerError)
 		return
 	}
 	payment.ID = result.InsertedID.(primitive.ObjectID).Hex()
 
-	log.Printf("✅ Payment created: %s", reference)
+	log.Printf(" Payment created: %s", reference)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -103,22 +103,22 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	reference := vars["reference"]
 
-	log.Printf("💳 ProcessPayment - Reference: %s", reference)
+	log.Printf(" ProcessPayment - Reference: %s", reference)
 
 	var req models.ProcessPaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Error parsing card data: %v", err)
+		log.Printf(" Error parsing card data: %v", err)
 		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("📥 Card data received - Holder: %s, Number: %s..., Expiry: %s", 
+	log.Printf(" Card data received - Holder: %s, Number: %s..., Expiry: %s", 
 		req.CardHolder, 
 		maskCardNumber(req.CardNumber), 
 		req.ExpiryDate)
 
 	if req.CardNumber == "" || req.CardHolder == "" || req.ExpiryDate == "" || req.CVV == "" {
-		log.Printf("❌ Incomplete card data")
+		log.Printf(" Incomplete card data")
 		http.Error(w, `{"error":"complete card data required"}`, http.StatusBadRequest)
 		return
 	}
@@ -127,16 +127,16 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	var payment models.Payment
 	err := database.PaymentsCollection.FindOne(context.Background(), bson.M{"reference": reference}).Decode(&payment)
 	if err != nil {
-		log.Printf("❌ Payment not found: %s", reference)
+		log.Printf(" Payment not found: %s", reference)
 		http.Error(w, `{"error":"payment not found"}`, http.StatusNotFound)
 		return
 	}
 
-	log.Printf("📦 Payment found - Status: %s, Amount: %.2f %s", payment.Status, payment.Amount, payment.Currency)
+	log.Printf(" Payment found - Status: %s, Amount: %.2f %s", payment.Status, payment.Amount, payment.Currency)
 
 	// Verificar si ya fue procesado
 	if payment.Status != "PENDING" {
-		log.Printf("⚠️ Payment already processed with status: %s", payment.Status)
+		log.Printf(" Payment already processed with status: %s", payment.Status)
 		
 		if payment.Status == "APPROVED" {
 			w.Header().Set("Content-Type", "application/json")
@@ -167,7 +167,7 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 		payment.Amount,
 	)
 
-	log.Printf("📥 PayU Response - Status: %s, Code: %s, Message: %s, TxnID: %s",
+	log.Printf(" PayU Response - Status: %s, Code: %s, Message: %s, TxnID: %s",
 		resp.Status, resp.ResponseCode, resp.ResponseMessage, resp.TransactionID)
 
 	// Actualizar en DB
@@ -183,7 +183,7 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 
 	_, err = database.PaymentsCollection.UpdateOne(context.Background(), bson.M{"reference": reference}, update)
 	if err != nil {
-		log.Printf("❌ Failed to update payment: %v", err)
+		log.Printf(" Failed to update payment: %v", err)
 		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
 		return
 	}
@@ -192,12 +192,12 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	var updated models.Payment
 	err = database.PaymentsCollection.FindOne(context.Background(), bson.M{"reference": reference}).Decode(&updated)
 	if err != nil {
-		log.Printf("❌ Failed to fetch updated payment: %v", err)
+		log.Printf(" Failed to fetch updated payment: %v", err)
 		http.Error(w, `{"error":"fetch after update failed"}`, http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("✅ Payment processed successfully - Final Status: %s", updated.Status)
+	log.Printf(" Payment processed successfully - Final Status: %s", updated.Status)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updated)

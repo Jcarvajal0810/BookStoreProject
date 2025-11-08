@@ -20,7 +20,8 @@ const paymentProto = grpc.loadPackageDefinition(packageDefinition).payment;
 
 export function processPayment(orderId, userId, amount, paymentMethod) {
   return new Promise((resolve, reject) => {
-    const PAYMENT_GRPC_URL = process.env.PAYMENT_GRPC_URL || 'localhost:50052';
+    const PAYMENT_GRPC_URL = process.env.PAYMENT_GRPC_URL || 'payment:50052';
+
     const client = new paymentProto.PaymentService(
       PAYMENT_GRPC_URL,
       grpc.credentials.createInsecure()

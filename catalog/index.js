@@ -145,7 +145,8 @@ app.listen(PORT, () => {
   console.log(`\n${"=".repeat(60)}`);
   console.log(` Catalog Service iniciado`);
   console.log("=".repeat(60));
-  console.log(` REST API: http://localhost:${PORT}`);
+  console.log(` REST API: http://${process.env.HOST || '0.0.0.0'}:${PORT}`);
+
   console.log(` gRPC Server: puerto ${process.env.GRPC_PORT || 50054}`);
   console.log("=".repeat(60) + "\n");
 });

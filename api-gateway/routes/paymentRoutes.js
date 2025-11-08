@@ -16,7 +16,7 @@ router.all('*', async (req, res) => {
       const paymentRef = req.path.split('/')[1]; // Extraer REF-1762371174
       
       if (processedPayments.has(paymentRef)) {
-        console.log('⚠️ Pago ya procesado (cache):', paymentRef);
+        console.log(' Pago ya procesado (cache):', paymentRef);
         return res.status(400).json({ 
           error: "already processed",
           message: "Este pago ya fue procesado anteriormente"
@@ -24,7 +24,7 @@ router.all('*', async (req, res) => {
       }
     }
     
-    console.log('💳 Payment request:', req.method, url);
+    console.log(' Payment request:', req.method, url);
     
     const response = await axios({
       method: req.method,
@@ -40,19 +40,19 @@ router.all('*', async (req, res) => {
       }
     });
     
-    // ✅ Asegurar que la respuesta siempre sea JSON
+    //  Asegurar que la respuesta siempre sea JSON
     res.setHeader('Content-Type', 'application/json');
     
     // Si el proceso fue exitoso, guardarlo en cache
     if (req.path.includes('/process') && response.status === 200) {
       const paymentRef = req.path.split('/')[1];
       processedPayments.add(paymentRef);
-      console.log('✅ Pago procesado, agregado a cache:', paymentRef);
+      console.log(' Pago procesado, agregado a cache:', paymentRef);
       
       // Limpiar cache después de 1 hora
       setTimeout(() => {
         processedPayments.delete(paymentRef);
-        console.log('🗑️ Pago removido del cache:', paymentRef);
+        console.log(' Pago removido del cache:', paymentRef);
       }, 3600000);
     }
     
@@ -60,9 +60,9 @@ router.all('*', async (req, res) => {
     res.status(response.status).json(response.data);
     
   } catch (error) {
-    console.error('💥 Payment error:', error.message);
+    console.error(' Payment error:', error.message);
     
-    // ✅ Asegurar respuesta JSON incluso en errores
+    //  Asegurar respuesta JSON incluso en errores
     res.setHeader('Content-Type', 'application/json');
     
     if (error.response) {
@@ -70,18 +70,18 @@ router.all('*', async (req, res) => {
       const status = error.response.status;
       const data = error.response.data;
       
-      console.error('❌ Error del payment service:', status, data);
+      console.error(' Error del payment service:', status, data);
       res.status(status).json(data);
     } else if (error.request) {
       // No hubo respuesta del backend
-      console.error('❌ Payment service no responde');
+      console.error(' Payment service no responde');
       res.status(503).json({ 
         error: "service unavailable",
         message: "Payment service no está disponible"
       });
     } else {
       // Error en la configuración de la petición
-      console.error('❌ Error configurando petición:', error.message);
+      console.error(' Error configurando petición:', error.message);
       res.status(500).json({ 
         error: "internal error",
         message: "Error interno del gateway"
@@ -90,4 +90,4 @@ router.all('*', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router; 

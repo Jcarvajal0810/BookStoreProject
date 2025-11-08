@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order
+  labels:
+    app: order
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+    spec:
+      containers:
+        - name: order
+          image: jcarvajal0810/bookstore-prube-order:latest
+          ports:
+            - containerPort: 4000    # REST
+            - containerPort: 50056   # gRPC
+          env:
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: INVENTORY_GRPC_URL
+              value: "inventory-grpc:50051"
+            - name: PAYMENT_GRPC_URL
+              value: "payment:50052"
+            - name: CART_GRPC_URL
+              value: "cart:50053"
+            - name: PORT
+              value: "4000"
+            - name: GRPC_PORT
+              value: "50056"
+            - name: IN_DOCKER
+              value: "true"
+            - name: RABBITMQ_HOST
+              value: "rabbitmq"
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USER
+              value: "admin"
+            - name: RABBITMQ_PASS
+              value: "admin"

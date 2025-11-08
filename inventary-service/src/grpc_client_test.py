@@ -4,7 +4,7 @@ import inventory_pb2_grpc
 
 def test_check_stock():
     # Conexión al servidor gRPC
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('inventory-grpc:50051')
     stub = inventory_pb2_grpc.InventoryServiceStub(channel)
 
     # Llamada al método CheckStock
@@ -13,7 +13,8 @@ def test_check_stock():
     print(f"✅ Respuesta del servidor: {response}")
 
 def test_reserve_stock():
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('inventory-grpc:50051')
+
     stub = inventory_pb2_grpc.InventoryServiceStub(channel)
 
     print("🧪 Probando ReserveStock...")
@@ -21,7 +22,8 @@ def test_reserve_stock():
     print(f"✅ Respuesta del servidor: {response}")
 
 def test_confirm_stock():
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('inventory-grpc:50051')
+
     stub = inventory_pb2_grpc.InventoryServiceStub(channel)
 
     print("🧪 Probando ConfirmStockReduction...")

@@ -1,0 +1,132 @@
+﻿version: '3.8'
+
+services:
+  #  USER SERVICE
+  user-service:
+    build: ./user-service
+    container_name: bs2_user
+    ports:
+      - "6000:6000"
+    environment:
+      - PORT=6000
+      - GRPC_PORT=50055
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0
+      - JWT_SECRET=WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54=
+    restart: unless-stopped
+
+  #  CATALOG SERVICE
+  catalog:
+    build: ./catalog
+    container_name: bs2_catalog
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GRPC_PORT=50054
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/catalogdb?retryWrites=true&w=majority&appName=SharedM0
+    restart: unless-stopped
+
+  #  CART SERVICE
+  cart:
+    build: ./cart-service
+    container_name: bs2_cart
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - GRPC_PORT=50053
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/cartdb?retryWrites=true&w=majority&appName=SharedM0
+      - CATALOG_GRPC_URL=catalog:50054
+      - INVENTORY_GRPC_URL=inventory:50051
+    depends_on:
+      - catalog
+      - inventory
+    restart: unless-stopped
+
+  #  INVENTORY SERVICE (REST + gRPC)
+  inventory:
+    build: ./inventary-service
+    container_name: bs2_inventory
+    ports:
+      - "8000:8000"
+      - "50051:50051"
+    environment:
+      - PORT=8000
+      - GRPC_PORT=50051
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/inventorydb?retryWrites=true&w=majority&appName=SharedM0
+    restart: unless-stopped
+
+  #  PAYMENT SERVICE
+  payment:
+    build: ./payment-service
+    container_name: bs2_payment
+    ports:
+      - "7000:7000"
+      - "50052:50052"
+    environment:
+      - PORT=7000
+      - GRPC_PORT=50052
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/paymentdb?retryWrites=true&w=majority&appName=SharedM0
+      - PAYU_ACCOUNT_ID=512321
+      - PAYU_MERCHANT_ID=508029
+      - PAYU_API_LOGIN=pRRXKOl8ikMmt9u
+      - PAYU_API_KEY=4Vj8eK4rloUd272L48hsrarnUA
+      - PAYU_PUBLIC_KEY=PKaC6H4cEDJD919n705L544kSU
+    restart: unless-stopped
+
+  #  ORDER SERVICE
+  order:
+    build: ./order
+    container_name: bs2_order
+    ports:
+      - "4000:4000"
+      - "50056:50056"
+    environment:
+      - PORT=4000
+      - GRPC_PORT=50056
+      - MONGO_URI=mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0
+      - INVENTORY_GRPC_URL=inventory:50051
+      - PAYMENT_GRPC_URL=payment:50052
+      - CART_GRPC_URL=cart:50053
+      - IN_DOCKER=true
+    depends_on:
+      - cart
+      - payment
+      - inventory
+    restart: unless-stopped
+
+  #  API GATEWAY
+  api-gateway:
+    build: ./api-gateway
+    container_name: bs2_gateway
+    ports:
+      - "4500:4500"
+    environment:
+      - PORT=4500
+      - USER_SERVICE_URL=http://user-service:6000
+      - CATALOG_SERVICE_URL=http://catalog:3000
+      - CART_SERVICE_URL=http://cart:5000
+      - ORDER_SERVICE_URL=http://order:4000
+      - PAYMENT_SERVICE_URL=http://payment:7000
+      - INVENTORY_SERVICE_URL=http://inventory:8000
+    depends_on:
+      - user-service
+      - catalog
+      - cart
+      - order
+      - payment
+      - inventory
+    restart: unless-stopped
+
+  #  FRONTEND
+  frontend:
+    build: ./Front-end-BookStore
+    container_name: bs2_frontend
+    ports:
+      - "3500:3500"
+    environment:
+      # Si ejecutas local, usa localhost; en contenedor, api-gateway
+      - VITE_API_GATEWAY=http://api-gateway:4500
+    depends_on:
+      - api-gateway
+    restart: unless-stopped

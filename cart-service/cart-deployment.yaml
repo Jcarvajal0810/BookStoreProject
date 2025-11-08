@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  labels:
+    app: cart
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+    spec:
+      containers:
+        - name: cart
+          image: jcarvajal0810/bookstore-prube-cart:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/cartdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: CATALOG_GRPC_URL
+              value: "catalog:50054"
+            - name: INVENTORY_GRPC_URL
+              value: "inventory:50051"
+            - name: GRPC_PORT
+              value: "50053"

@@ -43,3 +43,23 @@ def update_stock(book_id: str, quantity: int):
         upsert=True
     )
     return {'book_id': book_id, 'new_quantity': quantity}
+
+def reduce_stock(book_id: str, quantity: int):
+    item = inventory_collection.find_one({"book_id": book_id})
+    
+    if not item:
+        return {"error": "Libro no encontrado"}
+
+    current_stock = item.get("stock", 0)
+
+    if current_stock < quantity:
+        return {"error": "Stock insuficiente", "available": current_stock}
+
+    new_stock = current_stock - quantity
+
+    inventory_collection.update_one(
+        {"book_id": book_id},
+        {"$set": {"stock": new_stock}}
+    )
+
+    return {"book_id": book_id, "old_stock": current_stock, "new_stock": new_stock}

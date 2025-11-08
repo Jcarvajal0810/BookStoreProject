@@ -20,7 +20,8 @@ const cartProto = grpc.loadPackageDefinition(packageDefinition).cart;
 
 class CartClient {
   constructor() {
-    const CART_GRPC_URL = process.env.CART_GRPC_URL || 'localhost:50053';
+    const CART_GRPC_URL = process.env.CART_GRPC_URL || 'cart:50053';
+
     this.client = new cartProto.CartService(
       CART_GRPC_URL,
       grpc.credentials.createInsecure()

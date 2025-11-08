@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: jcarvajal0810/bookstore-prube-api-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4500
+          env:
+            - name: PORT
+              value: "4500"
+            # Rutas a los microservicios internos (REST)
+            - name: USER_SERVICE_URL
+              value: "http://user-service:6000"
+            - name: CATALOG_SERVICE_URL
+              value: "http://catalog:3000"
+            - name: CART_SERVICE_URL
+              value: "http://cart:5000"
+            - name: ORDER_SERVICE_URL
+              value: "http://order:4000"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment:7000"
+            - name: INVENTORY_SERVICE_URL
+              value: "http://inventory:8000"
+            # Variables de entorno adicionales opcionales
+            - name: NODE_ENV
+              value: "production"

@@ -31,7 +31,7 @@ func CreatePayment(w http.ResponseWriter, r *http.Request) {
 	
 	var req models.CreatePaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Error decodificando JSON en CreatePayment: %v", err)
+		log.Printf(" Error decodificando JSON en CreatePayment: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
 		return
@@ -90,14 +90,14 @@ func CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	result, err := database.PaymentsCollection.InsertOne(context.Background(), payment)
 	if err != nil {
-		log.Printf("❌ Error insertando pago: %v", err)
+		log.Printf(" Error insertando pago: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "database insert failed"})
 		return
 	}
-	payment.ID = result.InsertedID.(primitive.ObjectID).Hex()
+	payment.ID = result.InsertedID.(primitive.ObjectID)
 
-	log.Printf("✅ Pago creado: %s", reference)
+	log.Printf(" Pago creado: %s", reference)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(payment)
 }
@@ -110,11 +110,11 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	reference := vars["reference"]
 
-	log.Printf("🔍 ProcessPayment llamado para referencia: %s", reference)
+	log.Printf(" ProcessPayment llamado para referencia: %s", reference)
 
 	var req models.ProcessPaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Error decodificando JSON: %v", err)
+		log.Printf(" Error decodificando JSON: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
 		return
@@ -130,15 +130,15 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	var payment models.Payment
 	err := database.PaymentsCollection.FindOne(context.Background(), bson.M{"reference": reference}).Decode(&payment)
 	if err != nil {
-		log.Printf("❌ Pago no encontrado: %s", reference)
+		log.Printf(" Pago no encontrado: %s", reference)
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "payment not found"})
 		return
 	}
 
-	// ✅ Verificar si ya fue procesado (idempotencia)
+	//  Verificar si ya fue procesado (idempotencia)
 	if payment.Status != "PENDING" {
-		log.Printf("⚠️ Pago ya procesado: %s con estado %s", reference, payment.Status)
+		log.Printf(" Pago ya procesado: %s con estado %s", reference, payment.Status)
 		
 		// Si ya fue APROBADO, devolver 200 OK con el payment
 		if payment.Status == "APPROVED" {
@@ -161,7 +161,7 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 🔹 Simulación de pago con PayU
-	log.Printf("💳 Procesando pago con PayU simulado...")
+	log.Printf(" Procesando pago con PayU simulado...")
 	resp := payu.SimulatePayment(
 		req.CardNumber,
 		req.CardHolder,
@@ -175,7 +175,7 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	newMsg := resp.ResponseMessage
 	txn := resp.TransactionID
 
-	log.Printf("📊 Resultado PayU: Status=%s, Code=%s, TxnID=%s", newStatus, newCode, txn)
+	log.Printf(" Resultado PayU: Status=%s, Code=%s, TxnID=%s", newStatus, newCode, txn)
 
 	update := bson.M{
 		"$set": bson.M{
@@ -189,7 +189,7 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 
 	_, err = database.PaymentsCollection.UpdateOne(context.Background(), bson.M{"reference": reference}, update)
 	if err != nil {
-		log.Printf("❌ Error actualizando pago: %v", err)
+		log.Printf(" Error actualizando pago: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "update failed"})
 		return
@@ -198,13 +198,13 @@ func ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	var updated models.Payment
 	err = database.PaymentsCollection.FindOne(context.Background(), bson.M{"reference": reference}).Decode(&updated)
 	if err != nil {
-		log.Printf("❌ Error obteniendo pago actualizado: %v", err)
+		log.Printf(" Error obteniendo pago actualizado: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "fetch after update failed"})
 		return
 	}
 
-	log.Printf("✅ Pago procesado exitosamente: %s - %s", reference, newStatus)
+	log.Printf(" Pago procesado exitosamente: %s - %s", reference, newStatus)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(updated)
 }
@@ -325,7 +325,7 @@ func CreatePaymentTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, _ := database.PaymentsCollection.InsertOne(context.Background(), payment)
-	payment.ID = result.InsertedID.(primitive.ObjectID).Hex()
+	payment.ID = result.InsertedID.(primitive.ObjectID)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(payment)

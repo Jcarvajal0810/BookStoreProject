@@ -10,7 +10,7 @@ router.use((req, res, next) => {
   next();
 });
 
-// 🔥 RUTA 1: POST /order (sin /api/orders) - Crear orden desde carrito
+//  RUTA 1: POST /order (sin /api/orders) - Crear orden desde carrito
 router.post('/', async (req, res) => {
   try {
     console.log('[Order Gateway] Redirigiendo POST / a /api/orders/from-cart');

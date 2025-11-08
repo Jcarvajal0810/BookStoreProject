@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+spec:
+  selector:
+    app: catalog
+  ports:
+    # Puerto REST
+    - name: http
+      port: 3000
+      targetPort: 3000
+    # Puerto gRPC
+    - name: grpc
+      port: 50054
+      targetPort: 50054
+  type: ClusterIP

@@ -6,6 +6,7 @@ from ..controllers.inventory_controller import (
     update_inventory,
     delete_inventory,
     check_stock,
+    reduce_stock
 )
 
 router = APIRouter()
@@ -25,10 +26,17 @@ def get_all():
     return get_all_items()
 
 #  3. Ruta para obtener un libro específico por su ID lógico (book_id)
-@router.get('/{book_id}')
-def get_inventory_book(book_id: str):
-    """Obtiene un libro específico por su book_id"""
-    return get_book(book_id)
+@router.get("/stock/{book_id}")
+def check_stock_route(book_id: str):
+    """
+    Devuelve el stock disponible de un libro por book_id
+    """
+    stock = check_stock(book_id)
+
+    return {
+        "book_id": book_id,
+        "stock": stock
+    }
 
 #  4. Ruta para crear un nuevo producto
 @router.post('/')
@@ -47,3 +55,15 @@ def update_item(book_id: str, data: dict):
 def delete_item(book_id: str):
     """Elimina un producto del inventario"""
     return delete_inventory(book_id)
+
+@router.post('/reduce/{book_id}/{quantity}')
+def reduce_stock_route(book_id: str, quantity: int):
+    return reduce_stock(book_id, quantity)
+
+# 7. Ruta para consultar el stock de un libro
+@router.get('/stock/{book_id}')
+def check_stock_route(book_id: str):
+    """
+    Devuelve el stock disponible de un libro usando su book_id.
+    """
+    return check_stock(book_id)

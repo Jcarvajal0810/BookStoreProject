@@ -24,7 +24,7 @@ router.all('*', async (req, res) => {
       targetUrl = `${USER_URL}/api/users${path}`;
     }
 
-    console.log(`🔁 [UserRoute] ${req.method} -> ${targetUrl}`);
+    console.log(` [UserRoute] ${req.method} -> ${targetUrl}`);
 
     const response = await axios({
       method: req.method,
@@ -38,7 +38,7 @@ router.all('*', async (req, res) => {
     });
 
     if (response.status >= 400) {
-      console.error(`⚠️ Error del microservicio User (${response.status}):`, response.data);
+      console.error(` Error del microservicio User (${response.status}):`, response.data);
       return res.status(response.status).json(response.data);
     }
 

@@ -9,7 +9,8 @@ import (
 )
 
 func CallProcessPayment() {
-    conn, err := grpc.Dial("localhost:50052", grpc.WithInsecure())
+    conn, err := grpc.Dial("payment:50052", grpc.WithInsecure())
+
     if err != nil {
         log.Fatalf("No se pudo conectar: %v", err)
     }

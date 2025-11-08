@@ -11,7 +11,7 @@ RUN go mod tidy && go mod download
 COPY . .
 
 # Compilar el binario (asegurando que quede en /app)
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/payment-service .
+RUN CGO_ENABLED=0 GOOS=linux go build -o payment-service .
 
 # Etapa 2: imagen final liviana
 FROM alpine:latest

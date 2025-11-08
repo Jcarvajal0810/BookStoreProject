@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  labels:
+    app: user-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: jcarvajal0810/bookstore-prube-user-service:latest
+          ports:
+            - containerPort: 6000    # REST
+            - containerPort: 50055   # gRPC
+          env:
+            - name: PORT
+              value: "6000"
+            - name: GRPC_PORT
+              value: "50055"
+            - name: MONGO_URI
+              value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/userdb?retryWrites=true&w=majority&appName=SharedM0"
+            - name: JWT_SECRET
+              value: "WNXRO/cJDB5vORlhPq0098HAlggUdTu/Tk+E7Aqsd54="

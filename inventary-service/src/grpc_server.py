@@ -73,16 +73,24 @@ class InventoryServiceServicer(inventory_pb2_grpc.InventoryServiceServicer):
             )
 
     def ReserveStock(self, request, context):
+        """🔒 Reservar stock con operación atómica para evitar race conditions"""
         book_id = request.book_id
         quantity = request.quantity
 
         try:
+            # Primero intentamos buscar por book_id
             inventory_item = inventory_collection.find_one({"book_id": book_id})
+            query_field = "book_id"
+            query_value = book_id
             
+            # Si no existe, intentamos por _id
             if not inventory_item:
                 from bson.objectid import ObjectId
                 try:
                     inventory_item = inventory_collection.find_one({"_id": ObjectId(book_id)})
+                    if inventory_item:
+                        query_field = "_id"
+                        query_value = inventory_item['_id']
                 except:
                     pass
             
@@ -95,31 +103,40 @@ class InventoryServiceServicer(inventory_pb2_grpc.InventoryServiceServicer):
             
             current_stock = inventory_item.get('stock', 0)
             
-            if current_stock >= quantity:
+            # Validación previa de stock
+            if current_stock < quantity:
+                log_event(RED, "🔴", f"ReserveStock({book_id}, {quantity}) → Stock insuficiente ({current_stock})")
+                return inventory_pb2.ReserveResponse(
+                    success=False,
+                    message=f"Stock insuficiente. Disponibles: {current_stock}"
+                )
+            
+            # 🔒 OPERACIÓN ATÓMICA: Decrementa solo si hay suficiente stock
+            # Esto previene race conditions entre múltiples peticiones simultáneas
+            result = inventory_collection.update_one(
+                {
+                    query_field: query_value,
+                    "stock": {"$gte": quantity}  # Solo actualiza si stock >= quantity
+                },
+                {"$inc": {"stock": -quantity}}  # Decrementa atómicamente
+            )
+            
+            # Verificar si la operación tuvo éxito
+            if result.modified_count > 0:
                 new_stock = current_stock - quantity
-                
-                if 'book_id' in inventory_item:
-                    inventory_collection.update_one(
-                        {"book_id": book_id},
-                        {"$set": {"stock": new_stock}}
-                    )
-                else:
-                    inventory_collection.update_one(
-                        {"_id": inventory_item['_id']},
-                        {"$set": {"stock": new_stock}}
-                    )
-                
                 log_event(YELLOW, "🟡", f"ReserveStock({book_id}, {quantity}) → OK ({current_stock} → {new_stock})")
                 return inventory_pb2.ReserveResponse(
                     success=True,
                     message=f"Reservadas {quantity} unidades"
                 )
             else:
-                log_event(RED, "🔴", f"ReserveStock({book_id}, {quantity}) → Stock insuficiente ({current_stock})")
+                # Si no se modificó, significa que el stock cambió entre la validación y la actualización
+                log_event(RED, "🔴", f"ReserveStock({book_id}, {quantity}) → Fallo: stock cambió durante la operación")
                 return inventory_pb2.ReserveResponse(
                     success=False,
-                    message=f"Stock insuficiente. Disponibles: {current_stock}"
+                    message=f"Stock no disponible. Intente nuevamente."
                 )
+                
         except Exception as e:
             log_event(RED, "🔴", f"Error en ReserveStock: {str(e)}")
             return inventory_pb2.ReserveResponse(
@@ -128,17 +145,22 @@ class InventoryServiceServicer(inventory_pb2_grpc.InventoryServiceServicer):
             )
 
     def ReleaseStock(self, request, context):
-        """🆕 Liberar stock cuando el pago falla"""
+        """🔓 Liberar stock cuando el pago falla - con operación atómica"""
         book_id = request.book_id
         quantity = request.quantity
 
         try:
             inventory_item = inventory_collection.find_one({"book_id": book_id})
+            query_field = "book_id"
+            query_value = book_id
             
             if not inventory_item:
                 from bson.objectid import ObjectId
                 try:
                     inventory_item = inventory_collection.find_one({"_id": ObjectId(book_id)})
+                    if inventory_item:
+                        query_field = "_id"
+                        query_value = inventory_item['_id']
                 except:
                     pass
             
@@ -150,24 +172,27 @@ class InventoryServiceServicer(inventory_pb2_grpc.InventoryServiceServicer):
                 )
             
             current_stock = inventory_item.get('stock', 0)
-            new_stock = current_stock + quantity
             
-            if 'book_id' in inventory_item:
-                inventory_collection.update_one(
-                    {"book_id": book_id},
-                    {"$set": {"stock": new_stock}}
+            # 🔒 OPERACIÓN ATÓMICA: Incrementa el stock
+            result = inventory_collection.update_one(
+                {query_field: query_value},
+                {"$inc": {"stock": quantity}}  # Incrementa atómicamente
+            )
+            
+            if result.modified_count > 0:
+                new_stock = current_stock + quantity
+                log_event(BLUE, "🔵", f"ReleaseStock({book_id}, {quantity}) → OK ({current_stock} → {new_stock})")
+                return inventory_pb2.ReleaseResponse(
+                    success=True,
+                    message=f"Liberadas {quantity} unidades"
                 )
             else:
-                inventory_collection.update_one(
-                    {"_id": inventory_item['_id']},
-                    {"$set": {"stock": new_stock}}
+                log_event(RED, "🔴", f"ReleaseStock({book_id}) → No se pudo actualizar")
+                return inventory_pb2.ReleaseResponse(
+                    success=False,
+                    message=f"No se pudo liberar el stock"
                 )
-            
-            log_event(BLUE, "🔵", f"ReleaseStock({book_id}, {quantity}) → OK ({current_stock} → {new_stock})")
-            return inventory_pb2.ReleaseResponse(
-                success=True,
-                message=f"Liberadas {quantity} unidades"
-            )
+                
         except Exception as e:
             log_event(RED, "🔴", f"Error en ReleaseStock: {str(e)}")
             return inventory_pb2.ReleaseResponse(
