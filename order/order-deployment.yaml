@@ -24,7 +24,7 @@ spec:
             - name: MONGO_URI
               value: "mongodb+srv://Jcarvajal0810:Nutella_0810@sharedm0.d3q2w0n.mongodb.net/orderdb?retryWrites=true&w=majority&appName=SharedM0"
             - name: INVENTORY_GRPC_URL
-              value: "inventory-grpc:50051"
+              value: "inventory:50051"
             - name: PAYMENT_GRPC_URL
               value: "payment:50052"
             - name: CART_GRPC_URL

@@ -20,7 +20,7 @@ const inventoryProto = grpc.loadPackageDefinition(packageDefinition).inventory;
 
 class InventoryClient {
   constructor() {
-    const INVENTORY_GRPC_URL = process.env.INVENTORY_GRPC_URL || 'inventory-grpc:50051';
+    const INVENTORY_GRPC_URL = process.env.INVENTORY_GRPC_URL || 'inventory:50051';
 
     this.client = new inventoryProto.InventoryService(
       INVENTORY_GRPC_URL,

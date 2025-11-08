@@ -16,4 +16,5 @@ FROM eclipse-temurin:17-jdk
 WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
 EXPOSE 6000
+Expose 50055
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

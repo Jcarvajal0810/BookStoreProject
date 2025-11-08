@@ -3,7 +3,7 @@ import inventory_pb2
 import inventory_pb2_grpc
 
 class InventoryClient:
-    def __init__(self, host="inventory-grpc", port=50051):
+    def __init__(self, host="inventory", port=50051):
         self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = inventory_pb2_grpc.InventoryServiceStub(self.channel)
 

@@ -4,4 +4,5 @@ COPY package*.json ./
 RUN npm ci --only=production
 COPY . .
 EXPOSE 4000
-CMD ["node", "index.js"]
+EXPOSE 50056
+CMD ["sh", "-c", "node orderServer.js & node index.js"]
